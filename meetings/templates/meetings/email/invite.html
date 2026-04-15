@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Inter, Arial, sans-serif; background: #f4f6fb; margin: 0; padding: 0; }
+  .card { max-width: 520px; margin: 32px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  .header { background: #1a1f2e; padding: 28px 32px; }
+  .header h1 { color: #fff; margin: 0; font-size: 20px; }
+  .header p  { color: #9aa0b4; margin: 6px 0 0; font-size: 13px; }
+  .body { padding: 28px 32px; }
+  .row { display: flex; gap: 12px; margin-bottom: 14px; align-items: flex-start; }
+  .label { font-size: 11px; color: #9aa0b4; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; min-width: 80px; padding-top: 2px; }
+  .value { font-size: 14px; color: #1a1f2e; font-weight: 500; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+  .join-btn { display: block; text-align: center; background: #4f8ef7; color: #fff; text-decoration: none; border-radius: 8px; padding: 14px; font-size: 15px; font-weight: 600; margin: 20px 0 0; }
+  .footer { background: #f4f6fb; padding: 16px 32px; font-size: 11px; color: #9aa0b4; text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1>📹 {{ meeting.title }}</h1>
+    <p>You have been invited to a Vetri Meeting</p>
+  </div>
+  <div class="body">
+    <div class="row">
+      <span class="label">Host</span>
+      <span class="value">{{ meeting.host.name }}</span>
+    </div>
+    {% if meeting.is_all_day %}
+    <div class="row">
+      <span class="label">Date</span>
+      <span class="value">{{ meeting.scheduled_start|date:"D, d M Y" }} — All day</span>
+    </div>
+    {% elif meeting.scheduled_start %}
+    <div class="row">
+      <span class="label">Date</span>
+      <span class="value">{{ meeting.scheduled_start|date:"D, d M Y" }}</span>
+    </div>
+    <div class="row">
+      <span class="label">Time</span>
+      <span class="value">{{ meeting.scheduled_start|date:"h:i A" }} – {{ meeting.scheduled_end|date:"h:i A" }}</span>
+    </div>
+    {% endif %}
+    {% if meeting.repeat != 'none' %}
+    <div class="row">
+      <span class="label">Repeats</span>
+      <span class="value">{{ meeting.get_repeat_display }}{% if meeting.repeat_end_date %} until {{ meeting.repeat_end_date|date:"d M Y" }}{% endif %}</span>
+    </div>
+    {% endif %}
+    <hr class="divider">
+    <div class="row">
+      <span class="label">Meeting ID</span>
+      <span class="value" style="font-family:monospace;letter-spacing:2px;">{{ meeting.meeting_id|slice:":4" }} {{ meeting.meeting_id|slice:"4:8" }} {{ meeting.meeting_id|slice:"8:" }}</span>
+    </div>
+    <div class="row">
+      <span class="label">Passcode</span>
+      <span class="value" style="font-family:monospace;letter-spacing:2px;">{{ meeting.passcode }}</span>
+    </div>
+    <div class="row">
+      <span class="label">Link</span>
+      <span class="value" style="word-break:break-all;font-size:12px;">{{ meeting.meeting_url }}</span>
+    </div>
+    <a href="{{ meeting.meeting_url }}" class="join-btn">Join Meeting →</a>
+  </div>
+  <div class="footer">Vetri Meetings · If you weren't expecting this invite, you can ignore this email.</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,1739 @@
+{% extends 'meetings/base.html' %}
+{% load static %}
+
+{% block title %}
+    <title>Vetri Meetings - Dashboard</title>
+{% endblock %}
+
+{% block style %}
+    <link rel="stylesheet" href="{% static 'meetings/css/dashboard.css' %}">
+{% endblock %}
+
+
+{% block content %}
+
+<div class="main-content">
+
+    <div class="dashboard-container">
+
+        <!-- TIME -->
+        <div class="time-section">
+            <h1 id="time">02:20 PM</h1>
+            <p id="date">4 April, 2026</p>
+        </div>
+
+        <!-- ACTION BUTTONS -->
+        <div class="actions">
+
+            <a class="action-box orange" onclick="openNewMeetingDialog(event)">
+                <img src="{% static 'meetings/images/video-white.png' %}" alt="">
+                <p>New meeting</p>
+            </a>
+
+            <a class="action-box" onclick="openJoinModal()">
+                <img src="{% static 'meetings/images/join.png' %}" alt="">
+                <p>Join</p>
+            </a>
+
+            <a class="action-box" onclick="openScheduleModal()">
+                <img src="{% static 'meetings/images/calendar.png' %}" alt="">
+                <p>Schedule</p>
+            </a>
+
+            <a href="" class="action-box">
+                <img src="{% static 'meetings/images/share.png' %}" alt="">
+                <p>Share screen</p>
+            </a>
+
+            <a href="" class="action-box">
+                <img src="{% static 'meetings/images/notes.png' %}" alt="">
+                <p>My notes</p>
+            </a>
+
+        </div>
+
+    </div>
+
+    <!-- ══════════════════════════════════════
+         SCHEDULED MEETINGS FOR TODAY
+         ══════════════════════════════════════ -->
+    {% if request.user.is_authenticated %}
+    <div class="scheduled-section">
+        <div class="scheduled-header">
+            <h2>Scheduled Meetings</h2>
+            <div class="date-nav">
+                <button class="date-nav-btn" onclick="shiftDate(-1)" title="Previous day">&#8249;</button>
+                <div id="schDateDisplay" onclick="openDatePicker()">Today</div>
+                <input type="text" id="schDateAnchor">
+                <button class="date-nav-btn" onclick="shiftDate(1)" title="Next day">&#8250;</button>
+            </div>
+        </div>
+
+        <div id="meetingListContainer">
+            <div class="meetings-loading">Loading…</div>
+        </div>
+    </div>
+    {% else %}
+    <div class="scheduled-section">
+        <div class="scheduled-header">
+            <h2>Scheduled Meetings</h2>
+            <div class="date-nav">
+                <button class="date-nav-btn" onclick="shiftDate(-1)" title="Previous day">&#8249;</button>
+                <div id="schDateDisplay" onclick="openDatePicker()">Today</div>
+                <input type="text" id="schDateAnchor">
+                <button class="date-nav-btn" onclick="shiftDate(1)" title="Next day">&#8250;</button>
+            </div>
+        </div>
+
+        <div id="meetingListContainer">
+            <div class="meetings-loading">Log in to view scheduled meetings.</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ══════════════════════════════════════
+         JOIN MODAL
+         ══════════════════════════════════════ -->
+    <div id="joinModal" class="modal">
+        <div class="modal-content modal-content--wide">
+
+            <span class="close-btn" onclick="closeJoinModal()">&times;</span>
+
+            <!-- Step 1 -->
+            <div id="joinStep1">
+                <h2>Join a Meeting</h2>
+                <p class="modal-subtitle">Enter the Meeting ID and passcode provided by the host.</p>
+
+                <div id="joinError" class="join-error hidden"></div>
+
+                <div class="join-field">
+                    <label for="room_id">Meeting ID</label>
+                    <input type="text" id="room_id" placeholder="e.g. 4829 1037 4651"
+                           maxlength="14" inputmode="numeric" autocomplete="off"
+                           oninput="formatMeetingId(this)" required>
+                    <span class="field-hint">12-digit number</span>
+                </div>
+
+                <div class="join-field">
+                    <label for="password">Passcode</label>
+                    <div class="passcode-row">
+                        <input type="password" id="password" placeholder="e.g. A3K9PZ2W"
+                               maxlength="8" autocomplete="off"
+                               oninput="this.value = this.value.toUpperCase()">
+                        <button type="button" class="toggle-pw" onclick="togglePw()" title="Show/hide passcode">👁</button>
+                    </div>
+                    <span class="field-hint">8-character code (letters &amp; numbers)</span>
+                </div>
+
+                <div class="join-field">
+                    <label for="username">Your Name</label>
+                    <input type="text" id="username" placeholder="Enter your name"
+                           {% if user.is_authenticated %} value="{{ user.name }}" {% endif %} required>
+                </div>
+
+                <button type="button" class="join-btn" id="joinNextBtn" onclick="joinGoToPreview()">
+                    <span id="joinNextLabel">Continue</span>
+                    <span id="joinNextSpinner" class="spinner hidden"></span>
+                </button>
+            </div>
+
+            <!-- Step 2: Preview -->
+            <div id="joinStep2" class="hidden">
+                <div class="preview-back-row">
+                    <button type="button" class="back-btn" onclick="joinBackToDetails()">&#8592; Back</button>
+                    <h2>Preview &amp; Join</h2>
+                </div>
+                <p class="modal-subtitle">Check your camera and microphone before joining.</p>
+
+                <div class="preview-video-wrap" id="joinPreviewWrap">
+                    <video id="joinPreviewVideo" class="preview-video" autoplay muted playsinline></video>
+                    <div id="joinPreviewCamOff" class="preview-cam-off hidden">
+                        <div class="preview-avatar" id="joinPreviewAvatar">?</div>
+                        <span>Camera is off</span>
+                    </div>
+                    <div id="joinPreviewPermDenied" class="preview-perm-denied hidden">
+                        Camera / microphone access was denied.&nbsp;
+                        <a href="#" onclick="openPermSettings(event)">How to fix →</a>
+                    </div>
+                </div>
+
+                <div class="av-toggles">
+                    <button type="button" class="av-btn av-on" id="joinMicBtn" onclick="toggleJoinMic()" title="Microphone">
+                        <img src="{% static 'meetings/images/audio-on-black.png' %}" id="joinMicIcon"
+                             data-on="{% static 'meetings/images/audio-on-black.png' %}"
+                             data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
+                        <span id="joinMicLabel">Mic On</span>
+                    </button>
+                    <button type="button" class="av-btn av-on" id="joinCamBtn" onclick="toggleJoinCam()" title="Camera">
+                        <img src="{% static 'meetings/images/video-on-black.png' %}" id="joinCamIcon"
+                             data-on="{% static 'meetings/images/video-on-black.png' %}"
+                             data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
+                        <span id="joinCamLabel">Cam On</span>
+                    </button>
+                </div>
+
+                <div class="join-field">
+                    <label for="lobbyName">Your Name</label>
+                    <input type="text" id="lobbyName" placeholder="Enter your name"
+                        value="{{ request.user.name|default:'' }}" maxlength="60" autocomplete="off">
+                </div>
+
+                <button type="button" class="join-btn" id="joinFinalBtn" onclick="submitJoinFinal()">
+                    <span id="joinFinalLabel">Join Now</span>
+                    <span id="joinFinalSpinner" class="spinner hidden"></span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════
+         NEW MEETING MODAL
+         ══════════════════════════════════════ -->
+    <div id="newMeetingModal" class="modal">
+        <div class="modal-content modal-content--wide">
+
+            <span class="close-btn" onclick="closeNewMeetingDialog()">&times;</span>
+
+            <!-- Step 1: Title -->
+            <div id="newStep1">
+                <h2>New Meeting</h2>
+                <p class="modal-subtitle">Give your meeting a title before previewing your setup.</p>
+
+                <div class="join-field">
+                    <label for="meetingTitle">Meeting Title</label>
+                    <input type="text" id="meetingTitle" placeholder="e.g. Team Standup"
+                           maxlength="80" autocomplete="off">
+                </div>
+
+                <button type="button" class="join-btn" id="newNextBtn" onclick="newGoToPreview()">
+                    Continue
+                </button>
+            </div>
+
+            <!-- Step 2: Preview -->
+            <div id="newStep2" class="hidden">
+                <div class="preview-back-row">
+                    <button type="button" class="back-btn" onclick="newBackToDetails()">&#8592; Back</button>
+                    <h2>Preview &amp; Start</h2>
+                </div>
+                <p class="modal-subtitle">Check your camera and microphone before starting.</p>
+
+                <div class="preview-video-wrap" id="newPreviewWrap">
+                    <video id="newPreviewVideo" class="preview-video" autoplay muted playsinline></video>
+                    <div id="newPreviewCamOff" class="preview-cam-off hidden">
+                        <div class="preview-avatar" id="newPreviewAvatar">?</div>
+                        <span>Camera is off</span>
+                    </div>
+                    <div id="newPreviewPermDenied" class="preview-perm-denied hidden">
+                        Camera / microphone access was denied.&nbsp;
+                        <a href="#" onclick="openPermSettings(event)">How to fix →</a>
+                    </div>
+                </div>
+
+                <div class="av-toggles">
+                    <button type="button" class="av-btn av-on" id="newMicBtn" onclick="toggleNewMic()" title="Microphone">
+                        <img src="{% static 'meetings/images/audio-on-black.png' %}" id="newMicIcon"
+                             data-on="{% static 'meetings/images/audio-on-black.png' %}"
+                             data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
+                        <span id="newMicLabel">Mic On</span>
+                    </button>
+                    <button type="button" class="av-btn av-on" id="newCamBtn" onclick="toggleNewCam()" title="Camera">
+                        <img src="{% static 'meetings/images/video-on-black.png' %}" id="newCamIcon"
+                             data-on="{% static 'meetings/images/video-on-black.png' %}"
+                             data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
+                        <span id="newCamLabel">Cam On</span>
+                    </button>
+                </div>
+
+                <div class="join-field">
+                    <label for="lobbyName">Your Name</label>
+                    <input type="text" id="lobbyName" placeholder="Enter your name"
+                        value="{{ request.user.name|default:'' }}" maxlength="60" autocomplete="off">
+                </div>
+
+                <button type="button" class="join-btn" id="startFinalBtn" onclick="startMeetingFinal()">
+                    <span id="startFinalLabel">Start Meeting</span>
+                    <span id="startFinalSpinner" class="spinner hidden"></span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+<!-- ══════════════════════════════════════
+     SCHEDULE MODAL
+     ══════════════════════════════════════ -->
+<div id="scheduleModal" class="modal">
+    <div class="modal-content modal-content--wide modal-content--scroll">
+        <span class="close-btn" onclick="closeScheduleModal()">&times;</span>
+        <h2>Schedule a Meeting</h2>
+        <p class="modal-subtitle">Fill in the details and invite attendees.</p>
+
+        <div id="scheduleError" class="join-error hidden"></div>
+        <div id="scheduleSuccess" class="schedule-success hidden"></div>
+
+        <div class="join-field">
+            <label>Meeting Title <span class="required-star">*</span></label>
+            <input type="text" id="schTitle" placeholder="e.g. Team Standup" maxlength="100" autocomplete="off" required>
+        </div>
+
+        <div class="join-field toggle-row">
+            <label>All day</label>
+            <label class="sch-toggle">
+                <input type="checkbox" id="schAllDay" onchange="toggleAllDay()">
+                <span class="sch-slider"></span>
+            </label>
+        </div>
+
+        <div class="join-field" id="schDateTimeRow">
+            <label>Start</label>
+            <div class="date-time-row">
+                <input type="text" id="schStartDate" placeholder="Select date" readonly class="date-input">
+                <input type="text" id="schStartTime" placeholder="Select time" readonly class="time-input">
+            </div>
+            <label class="label-gap">End</label>
+            <div class="date-time-row">
+                <input type="text" id="schEndDate" placeholder="Select date" readonly class="date-input">
+                <input type="text" id="schEndTime" placeholder="Select time" readonly class="time-input">
+            </div>
+        </div>
+
+        <div class="join-field hidden" id="schAllDayRow">
+            <label>Date</label>
+            <input type="text" id="schAllDayDate" placeholder="Select date" readonly>
+        </div>
+
+        <div class="join-field">
+            <label>Repeat</label>
+            <select id="schRepeat" onchange="toggleRepeatEnd()" class="sch-select">
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekday">Every weekday (Mon–Fri)</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+            </select>
+        </div>
+
+        <div class="join-field hidden" id="schRepeatEndRow">
+            <label>Repeat ends on</label>
+            <input type="text" id="schRepeatEnd" placeholder="Select date (optional)" readonly>
+            <span class="field-hint">Leave blank for no end date</span>
+        </div>
+
+        <div class="join-field">
+            <label>Add Invitees</label>
+            <div class="invitee-input-row">
+                <input type="email" id="schInviteeInput" placeholder="name@example.com"
+                       onkeydown="if(event.key==='Enter'){addInvitee();event.preventDefault();}">
+                <button type="button" class="invitee-add-btn" onclick="addInvitee()">Add</button>
+            </div>
+            <div id="schInviteeList" class="invitee-list"></div>
+        </div>
+
+        <button type="button" class="join-btn" id="schSubmitBtn" onclick="submitSchedule()">
+            <span id="schSubmitLabel">Schedule Meeting</span>
+            <span id="schSubmitSpinner" class="spinner hidden"></span>
+        </button>
+    </div>
+</div>
+
+
+
+
+<!-- ══════════════════════════════════════
+     EDIT MEETING MODAL
+     ══════════════════════════════════════ -->
+<div id="editMeetingModal" class="modal">
+    <div class="modal-content modal-content--wide">
+        <span class="close-btn" onclick="closeEditModal()">&times;</span>
+        <h2>Edit Meeting</h2>
+        <p class="modal-subtitle">Update the details for this meeting.</p>
+
+        <input type="hidden" id="editMeetingId">
+
+        <div id="editError" class="join-error hidden"></div>
+        <div id="editSuccess" class="schedule-success hidden"></div>
+
+        <div class="join-field">
+            <label>Meeting Title <span class="required-star">*</span></label>
+            <input type="text" id="editTitle" maxlength="100" autocomplete="off">
+        </div>
+
+        <div class="join-field toggle-row">
+            <label>All day</label>
+            <label class="sch-toggle">
+                <input type="checkbox" id="editAllDay" onchange="toggleEditAllDay()">
+                <span class="sch-slider"></span>
+            </label>
+        </div>
+
+        <div class="join-field" id="editDateTimeRow">
+            <label>Start</label>
+            <div class="date-time-row">
+                <input type="text" id="editStartDate" placeholder="Select date" readonly class="date-input">
+                <input type="text" id="editStartTime" placeholder="Select time" readonly class="time-input">
+            </div>
+            <label class="label-gap">End</label>
+            <div class="date-time-row">
+                <input type="text" id="editEndDate" placeholder="Select date" readonly class="date-input">
+                <input type="text" id="editEndTime" placeholder="Select time" readonly class="time-input">
+            </div>
+        </div>
+
+        <div class="join-field hidden" id="editAllDayRow">
+            <label>Date</label>
+            <input type="text" id="editAllDayDate" placeholder="Select date" readonly>
+        </div>
+
+        <div class="join-field">
+            <label>Repeat</label>
+            <select id="editRepeat" onchange="toggleEditRepeatEnd()" class="sch-select">
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekday">Every weekday (Mon–Fri)</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+            </select>
+        </div>
+
+        <div class="join-field hidden" id="editRepeatEndRow">
+            <label>Repeat ends on</label>
+            <input type="text" id="editRepeatEnd" placeholder="Select date (optional)" readonly>
+        </div>
+
+        <div class="join-field">
+            <label>Invitees</label>
+            <div class="invitee-input-row">
+                <input type="email" id="editInviteeInput" placeholder="name@example.com"
+                       onkeydown="if(event.key==='Enter'){addEditInvitee();event.preventDefault();}">
+                <button type="button" class="invitee-add-btn" onclick="addEditInvitee()">Add</button>
+            </div>
+            <div id="editInviteeList" class="invitee-list"></div>
+        </div>
+
+        <button type="button" class="join-btn" id="editSubmitBtn" onclick="submitEdit()">
+            <span id="editSubmitLabel">Save Changes</span>
+            <span id="editSubmitSpinner" class="spinner hidden"></span>
+        </button>
+    </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     DELETE CONFIRM OVERLAY
+     ══════════════════════════════════════ -->
+<div id="deleteConfirmOverlay" class="confirm-overlay">
+    <div class="confirm-box">
+        <h3>Delete Meeting?</h3>
+        <p id="deleteConfirmMsg">This will permanently delete the meeting and notify invitees. This action cannot be undone.</p>
+        <div class="confirm-btns">
+            <button class="confirm-cancel" onclick="closeDeleteConfirm()">Cancel</button>
+            <button class="confirm-delete-btn" id="confirmDeleteBtn" onclick="confirmDelete()">Delete</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+
+{% block script %}
+<script>
+
+/* ── Time / Date ── */
+function updateTime() {
+    const now = new Date();
+    let hours = now.getHours(), minutes = now.getMinutes();
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    minutes = minutes < 10 ? "0" + minutes : minutes;
+    document.getElementById("time").innerText = `${hours}:${minutes} ${ampm}`;
+    document.getElementById("date").innerText = now.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
+}
+
+function localIso(dateStr, timeStr) {
+    const offset = -new Date().getTimezoneOffset();
+    const sign   = offset >= 0 ? '+' : '-';
+    const hh     = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+    const mm     = String(Math.abs(offset) % 60).padStart(2, '0');
+    return `${dateStr}T${timeStr}:00${sign}${hh}:${mm}`;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   SHARED PREVIEW STATE
+   ─────────────────────────────────────────────────────────────── */
+let joinMicOn = true, joinCamOn = true, joinStream = null, joinPermDenied = false, joinRoomName = null;
+let newMicOn = true, newCamOn = true, newStream = null, newPermDenied = false;
+let savedUsername = "";
+let schInvitees = [];
+
+const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
+const LOGIN_URL = "{% url 'accounts:login_page' %}";
+
+/* ─────────────────────────────────────────────────────────────────
+   SCHEDULED MEETINGS — DATE PICKER & LIST
+   ─────────────────────────────────────────────────────────────── */
+
+let currentDate = new Date();
+currentDate.setHours(0,0,0,0);
+let flatpickrInst = null;
+let allMeetingsCache = null;
+let currentPanelTab = 'hosted';
+let editInvitees = [];
+let deleteTargetId = null;
+
+function dateToISO(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+}
+
+function formatDateLabel(d) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
+    const yesterday = new Date(today); yesterday.setDate(today.getDate()-1);
+    if (d.getTime() === today.getTime())     return 'Today';
+    if (d.getTime() === tomorrow.getTime())  return 'Tomorrow';
+    if (d.getTime() === yesterday.getTime()) return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatTime12(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    let h = d.getHours(), m = d.getMinutes();
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${String(m).padStart(2,'0')} ${ap}`;
+}
+
+function shiftDate(delta) {
+    currentDate.setDate(currentDate.getDate() + delta);
+    updateDateDisplay();
+    loadMeetingsForDate();
+}
+
+function updateDateDisplay() {
+    document.getElementById('schDateDisplay').textContent = formatDateLabel(currentDate);
+    if (flatpickrInst) flatpickrInst.setDate(currentDate, false);
+}
+
+function openDatePicker() {
+    if (!flatpickrInst) {
+        flatpickrInst = flatpickr('#schDateAnchor', {
+            defaultDate: currentDate,
+            dateFormat: 'Y-m-d',
+            disableMobile: true,
+            onChange: function(selectedDates) {
+                if (selectedDates.length) {
+                    currentDate = new Date(selectedDates[0]);
+                    currentDate.setHours(0,0,0,0);
+                    updateDateDisplay();
+                    loadMeetingsForDate();
+                }
+            }
+        });
+    }
+    flatpickrInst.open();
+}
+
+async function loadMeetingsForDate() {
+    if (!IS_AUTHENTICATED) return;
+    const container = document.getElementById('meetingListContainer');
+    container.innerHTML = '<div class="meetings-loading">Loading…</div>';
+
+    try {
+        const res  = await fetch(`/meeting/scheduled/?date=${dateToISO(currentDate)}`);
+        const data = await res.json();
+        renderMeetingList(data.meetings || [], container);
+    } catch(e) {
+        container.innerHTML = '<div class="meetings-empty"><div class="empty-icon">⚠️</div>Failed to load.</div>';
+    }
+}
+
+function repeatLabel(r) {
+    const map = { none:'', daily:'Daily', weekday:'Weekdays', weekly:'Weekly', monthly:'Monthly', yearly:'Yearly' };
+    return map[r] || r;
+}
+
+function copyMeetingDetails(btn) {
+    const id    = btn.dataset.mid;
+    const pc    = btn.dataset.pc;
+    const url   = btn.dataset.url;
+    const title = btn.dataset.title;
+    const text  = `Meeting: ${title}\nMeeting ID: ${id.match(/.{1,4}/g).join(' ')}\nPasscode: ${pc}\nJoin link: ${url}`;
+    navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+    }).catch(() => {
+        /* fallback for older browsers */
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+    });
+}
+
+/* ── NEW: copy just the join URL ── */
+function copyMeetingUrl(btn) {
+    const url = btn.dataset.url;
+    navigator.clipboard.writeText(url).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+    }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = url; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+    });
+}
+
+function renderMeetingList(meetings, container) {
+    if (!meetings.length) {
+        container.innerHTML = `
+            <div class="meetings-empty">
+                <div class="empty-icon">📅</div>
+                <p>No meetings scheduled for this day.</p>
+            </div>`;
+        return;
+    }
+
+    const html = meetings.map(m => {
+        const startTime = m.is_all_day ? 'All day' : formatTime12(m.start);
+        const endTime   = (!m.is_all_day && m.end) ? formatTime12(m.end) : '';
+        const meetingUrl = m.meeting_url || `${window.location.origin}/room/${m.room_name}/`;
+
+        /* ── Date range label ── */
+        function fmtDateShort(isoStr) {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        let dateRangeHtml = '';
+        if (m.repeat && m.repeat !== 'none') {
+            const fromDate  = fmtDateShort(m.start);
+            const untilDate = m.repeat_end_date
+                ? fmtDateShort(m.repeat_end_date + 'T00:00:00')
+                : '';
+            if (!untilDate){
+                dateRangeHtml = `
+                    <span class="mc-meta-item mc-daterange">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        ${fromDate}
+                        <span class="badge badge-repeat" style="margin-left:4px">${repeatLabel(m.repeat)}</span>
+                    </span>`;
+            }
+            else{
+            dateRangeHtml = `
+                <span class="mc-meta-item mc-daterange">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    ${fromDate}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin:0 2px"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    ${untilDate}
+                    <span class="badge badge-repeat" style="margin-left:4px">${repeatLabel(m.repeat)}</span>
+                </span>`;
+            }
+        } else {
+            const dateLabel = fmtDateShort(m.start);
+            if (dateLabel) {
+                dateRangeHtml = `
+                    <span class="mc-meta-item mc-daterange">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        ${dateLabel}
+                    </span>`;
+            }
+        }
+
+        /* ── Badges: only Host/Invitee + All Day here, repeat moved to meta ── */
+        const badges = [];
+        const hostbadges = [];
+        if (m.is_host) hostbadges.push('<span class="badge badge-host">Host</span>');
+        else           hostbadges.push('<span class="badge badge-invitee">Invited</span>');
+        if (m.is_all_day) badges.push('<span class="badge badge-allday">All day</span>');
+        if (m.repeat && m.repeat !== 'none') badges.push(`<span class="badge badge-repeat">${repeatLabel(m.repeat)}</span>`);
+        
+        const editBtn   = m.is_host
+            ? `<button class="mact-btn mact-edit" onclick="openEditModal(${JSON.stringify(m).replace(/"/g,'&quot;')})">Edit</button>`
+            : '';
+        const deleteBtn = m.is_host
+            ? `<button class="mact-btn mact-delete" onclick="openDeleteConfirm(${m.id}, '${escHtml(m.title)}')">Delete</button>`
+            : '';
+        const hostPairRow = m.is_host
+            ? `<div class="mact-pair">${editBtn}${deleteBtn}</div>`
+            : '';
+
+        return `
+        <div class="meeting-card ${m.is_host ? 'is-host' : 'is-invitee'} ${m.is_all_day ? 'all-day' : ''}">
+            <div class="meeting-card-accent"></div>
+
+            <div class="meeting-card-time">
+                <span class="mc-time-start">${startTime}</span>
+                ${endTime ? `<span class="mc-time-end">${endTime}</span>` : ''}
+            </div>
+
+            <div class="meeting-card-divider"></div>
+
+            <div class="meeting-card-body">
+                <div class="mc-top-row">
+                    <div class="mc-title-badges-row">
+                        <span class="mc-title">Meeting Title - ${escHtml(m.title)}</span>
+                        <div class="mc-badges">
+                            ${hostbadges.join('')}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mc-meta">
+                    ${dateRangeHtml}
+                    <span class="mc-meta-item mc-id">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        ${fmtId(m.meeting_id)}
+                        <button class="copy-btn" onclick="copyText('${m.meeting_id}', this)" title="Copy ID">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </span>
+                    <span class="mc-meta-item mc-passcode">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                        ${m.passcode}
+                        <button class="copy-btn" onclick="copyText('${m.passcode}', this)" title="Copy Passcode">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </span>
+                    ${m.invitees && m.invitees.length ? `
+                    <span class="mc-meta-item">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        ${m.invitees.length} invitee${m.invitees.length > 1 ? 's' : ''}
+                    </span>` : ''}
+                </div>
+            </div>
+
+            <div class="meeting-card-actions">
+                <button class="mact-btn mact-join" onclick="window.location.href='/room/${m.room_name}/'">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Join
+                </button>
+                <div class="mact-pair">
+                    <button class="mact-btn mact-copy-d"
+                        data-mid="${m.meeting_id}"
+                        data-pc="${m.passcode}"
+                        data-url="${escHtml(meetingUrl)}"
+                        data-title="${escHtml(m.title)}"
+                        onclick="copyMeetingDetails(this)"
+                        title="Copy meeting ID, passcode &amp; link">Copy details</button>
+                    <button class="mact-btn mact-copy-l"
+                        data-url="${escHtml(meetingUrl)}"
+                        onclick="copyMeetingUrl(this)"
+                        title="Copy join link">Copy link</button>
+                </div>
+                ${hostPairRow}
+            </div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `<div class="meeting-list">${html}</div>`;
+}
+
+function fmtId(id) {
+    return String(id).match(/.{1,4}/g)?.join(' ') ?? id;
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => btn.innerHTML = orig, 1500);
+    });
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MEETINGS PANEL
+   ─────────────────────────────────────────────────────────────── */
+
+async function openMeetingsPanel() {
+    if (!IS_AUTHENTICATED) { requireLogin('none'); return; }
+    document.getElementById('meetingsPanelOverlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    await loadAllMeetings();
+}
+
+function closeMeetingsPanel(e) {
+    if (e && e.target !== document.getElementById('meetingsPanelOverlay')) return;
+    document.getElementById('meetingsPanelOverlay').classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+async function loadAllMeetings() {
+    document.getElementById('panelBody').innerHTML = '<div class="meetings-loading">Loading…</div>';
+    try {
+        const res  = await fetch('/meeting/all-scheduled/');
+        const data = await res.json();
+        allMeetingsCache = data.meetings || [];
+        renderPanel();
+    } catch(e) {
+        document.getElementById('panelBody').innerHTML = '<div class="meetings-empty"><div class="empty-icon">⚠️</div>Failed to load.</div>';
+    }
+}
+
+function switchPanelTab(tab, el) {
+    currentPanelTab = tab;
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    renderPanel();
+}
+
+function renderPanel() {
+    if (!allMeetingsCache) return;
+    let meetings = allMeetingsCache;
+    if (currentPanelTab === 'hosted')  meetings = meetings.filter(m => m.is_host);
+    if (currentPanelTab === 'invited') meetings = meetings.filter(m => !m.is_host);
+
+    const body = document.getElementById('panelBody');
+    if (!meetings.length) {
+        body.innerHTML = `<div class="meetings-empty"><div class="empty-icon">📅</div>No meetings in this category.</div>`;
+        return;
+    }
+
+    body.innerHTML = meetings.map(m => {
+        const timeStr = m.is_all_day
+            ? 'All day'
+            : [formatTime12(m.start), m.end ? formatTime12(m.end) : ''].filter(Boolean).join(' – ');
+        const dateStr = m.start ? new Date(m.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+        const editBtn   = m.is_host ? `<button class="mact-btn mact-edit" onclick="openEditModal(${JSON.stringify(m).replace(/"/g,'&quot;')})">Edit</button>` : '';
+        const deleteBtn = m.is_host ? `<button class="mact-btn mact-delete" onclick="openDeleteConfirm(${m.id}, '${escHtml(m.title)}')">Delete</button>` : '';
+
+        return `
+        <div class="panel-meeting-card ${m.is_host ? 'is-host' : ''}">
+            <div class="panel-card-top">
+                <span class="panel-card-title">${escHtml(m.title)}</span>
+                <div class="panel-card-badges">
+                    ${m.is_host ? '<span class="badge badge-host">Host</span>' : '<span class="badge badge-invitee">Invited</span>'}
+                    ${m.repeat && m.repeat !== 'none' ? `<span class="badge badge-repeat">${repeatLabel(m.repeat)}</span>` : ''}
+                    ${m.is_all_day ? '<span class="badge badge-allday">All day</span>' : ''}
+                </div>
+            </div>
+            <div class="panel-card-meta">
+                <div class="panel-meta-row">📅 <span>${dateStr} &nbsp;·&nbsp; ${timeStr}</span></div>
+                <div class="panel-meta-row">
+                    🔑 <span class="panel-meta-code">${fmtId(m.meeting_id)}</span>
+                    <button class="copy-btn" onclick="copyText('${m.meeting_id}', this)" title="Copy ID">⧉</button>
+                    &nbsp;
+                    🔒 <span class="panel-meta-code">${m.passcode}</span>
+                    <button class="copy-btn" onclick="copyText('${m.passcode}', this)" title="Copy passcode">⧉</button>
+                </div>
+                ${m.invitees && m.invitees.length ? `<div class="panel-meta-row">👥 ${m.invitees.join(', ')}</div>` : ''}
+            </div>
+            <div class="panel-card-actions">
+                <button class="mact-btn mact-join" onclick="window.location.href='/room/${m.room_name}/'">Join</button>
+                ${editBtn}
+                ${deleteBtn}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   EDIT MODAL
+   ─────────────────────────────────────────────────────────────── */
+
+let _fpEditStartDate = null, _fpEditStartTime = null;
+let _fpEditEndDate   = null, _fpEditEndTime   = null;
+let _fpEditAllDay    = null, _fpEditRepeatEnd = null;
+
+function _initEditFlatpickrs() {
+    if (!_fpEditStartDate) {
+        _fpEditStartDate = flatpickr('#editStartDate', {
+            dateFormat: 'Y-m-d',
+            disableMobile: true,
+            onChange([d]) {
+                if (!d) return;
+                if (_fpEditEndDate) {
+                    _fpEditEndDate.set('minDate', d);
+                    if (_fpEditEndDate.selectedDates[0] && _fpEditEndDate.selectedDates[0] < d) {
+                        _fpEditEndDate.setDate(d, true);
+                    }
+                }
+                if (_fpEditRepeatEnd) {
+                    _fpEditRepeatEnd.set('minDate', d);
+                    if (_fpEditRepeatEnd.selectedDates[0] && _fpEditRepeatEnd.selectedDates[0] <= d) {
+                        _fpEditRepeatEnd.clear();
+                    }
+                }
+                if (_fpEditEndDate && _fpEditEndTime && _fpEditStartTime) {
+                    const endDateVal = _fpEditEndDate.input.value;
+                    if (endDateVal === dateToISO(d)) {
+                        const st = _fpEditStartTime.selectedDates[0];
+                        if (st) {
+                            _fpEditEndTime.set('minTime', `${String(st.getHours()).padStart(2,'0')}:${String(st.getMinutes()).padStart(2,'0')}`);
+                        }
+                    } else {
+                        _fpEditEndTime.set('minTime', '00:00');
+                    }
+                }
+            }
+        });
+    } else {
+        _fpEditStartDate.set('minDate', null);
+        _fpEditStartDate.set('maxDate', null);
+    }
+
+    if (!_fpEditStartTime) {
+        _fpEditStartTime = flatpickr('#editStartTime', {
+            enableTime: true, noCalendar: true,
+            dateFormat: 'H:i', time_24hr: false, disableMobile: true,
+            onChange([t]) {
+                if (!t || !_fpEditEndDate || !_fpEditStartDate) return;
+                if (_fpEditStartDate.input.value === _fpEditEndDate.input.value && _fpEditEndTime) {
+                    const h = String(t.getHours()).padStart(2,'0');
+                    const mm = String(t.getMinutes()).padStart(2,'0');
+                    _fpEditEndTime.set('minTime', `${h}:${mm}`);
+                    if (_fpEditEndTime.selectedDates[0] && _fpEditEndTime.selectedDates[0] <= t) {
+                        _fpEditEndTime.clear();
+                    }
+                }
+            }
+        });
+    } else {
+        _fpEditStartTime.set('minTime', '00:00');
+        _fpEditStartTime.set('maxTime', '23:59');
+    }
+
+    if (!_fpEditEndDate) {
+        _fpEditEndDate = flatpickr('#editEndDate', {
+            dateFormat: 'Y-m-d',
+            disableMobile: true,
+            onChange([d]) {
+                if (!d || !_fpEditStartDate) return;
+                if (_fpEditEndTime && _fpEditStartTime && _fpEditStartDate.input.value === dateToISO(d)) {
+                    const st = _fpEditStartTime.selectedDates[0];
+                    if (st) {
+                        _fpEditEndTime.set('minTime', `${String(st.getHours()).padStart(2,'0')}:${String(st.getMinutes()).padStart(2,'0')}`);
+                    }
+                } else if (_fpEditEndTime) {
+                    _fpEditEndTime.set('minTime', '00:00');
+                }
+            }
+        });
+    } else {
+        _fpEditEndDate.set('minDate', null);
+        _fpEditEndDate.set('maxDate', null);
+    }
+
+    if (!_fpEditEndTime) {
+        _fpEditEndTime = flatpickr('#editEndTime', {
+            enableTime: true, noCalendar: true,
+            dateFormat: 'H:i', time_24hr: false, disableMobile: true,
+        });
+    } else {
+        _fpEditEndTime.set('minTime', '00:00');
+        _fpEditEndTime.set('maxTime', '23:59');
+    }
+
+    if (!_fpEditAllDay) {
+        _fpEditAllDay = flatpickr('#editAllDayDate', {
+            dateFormat: 'Y-m-d', disableMobile: true,
+        });
+    } else {
+        _fpEditAllDay.set('minDate', null);
+    }
+
+    if (!_fpEditRepeatEnd) {
+        _fpEditRepeatEnd = flatpickr('#editRepeatEnd', {
+            dateFormat: 'Y-m-d', disableMobile: true, allowInput: false,
+        });
+    } else {
+        _fpEditRepeatEnd.set('minDate', null);
+    }
+}
+
+function openEditModal(m) {
+    document.getElementById('editMeetingId').value = m.id;
+    document.getElementById('editTitle').value     = m.title;
+    document.getElementById('editRepeat').value    = m.repeat || 'none';
+    document.getElementById('editAllDay').checked  = m.is_all_day;
+
+    const modal = document.getElementById('editMeetingModal');
+    modal.style.display = 'flex'; modal.style.visibility = 'visible'; modal.style.opacity = '1';
+
+    editInvitees = m.invitees ? [...m.invitees] : [];
+    renderEditInvitees();
+    toggleEditAllDay();
+    toggleEditRepeatEnd();
+    document.getElementById('editError').classList.add('hidden');
+    document.getElementById('editSuccess').classList.add('hidden');
+
+    // Step 1 — init instances (creates them if first time, resets restrictions if reopen)
+    _initEditFlatpickrs();
+
+    // Step 2 — populate values after flatpickr is ready
+    setTimeout(() => {
+        // Parse start
+        let startDate = null;
+        if (m.start) {
+            const s  = new Date(m.start);
+            startDate = s;
+            const sd = dateToISO(s);
+            const st = `${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')}`;
+
+            if (_fpEditStartDate) _fpEditStartDate.setDate(sd, true);
+            if (_fpEditStartTime) _fpEditStartTime.setDate(st, true);
+            if (m.is_all_day && _fpEditAllDay) _fpEditAllDay.setDate(sd, true);
+        }
+
+        // Parse end — clear minDate first so setDate is never blocked
+        if (m.end) {
+            const e  = new Date(m.end);
+            const ed = dateToISO(e);
+            const et = `${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}`;
+
+            if (_fpEditEndDate) {
+                _fpEditEndDate.set('minDate', null);   // ← lift restriction before setting
+                _fpEditEndDate.setDate(ed, true);
+                // Now re-apply correct minDate (start date)
+                if (startDate) _fpEditEndDate.set('minDate', startDate);
+            }
+            if (_fpEditEndTime) {
+                _fpEditEndTime.set('minTime', '00:00'); // ← lift before setting
+                _fpEditEndTime.setDate(et, true);
+                // Re-apply minTime only if same day as start
+                if (startDate && m.start) {
+                    const s = new Date(m.start);
+                    if (dateToISO(s) === dateToISO(new Date(m.end))) {
+                        const h  = String(s.getHours()).padStart(2,'0');
+                        const mm = String(s.getMinutes()).padStart(2,'0');
+                        _fpEditEndTime.set('minTime', `${h}:${mm}`);
+                    }
+                }
+            }
+        }
+
+        // Repeat end date
+        if (m.repeat_end_date && _fpEditRepeatEnd) {
+            _fpEditRepeatEnd.set('minDate', null);
+            _fpEditRepeatEnd.setDate(m.repeat_end_date, true);
+            if (startDate) _fpEditRepeatEnd.set('minDate', startDate);
+        }
+    }, 50);
+}
+
+function closeEditModal() {
+    document.getElementById('editMeetingModal').style.display = 'none';
+}
+
+function toggleEditAllDay() {
+    const allDay = document.getElementById('editAllDay').checked;
+    document.getElementById('editDateTimeRow').classList.toggle('hidden',  allDay);
+    document.getElementById('editAllDayRow').classList.toggle('hidden',   !allDay);
+}
+
+function toggleEditRepeatEnd() {
+    const val = document.getElementById('editRepeat').value;
+    document.getElementById('editRepeatEndRow').classList.toggle('hidden', val === 'none');
+}
+
+function addEditInvitee() {
+    const input = document.getElementById('editInviteeInput');
+    const email = input.value.trim().toLowerCase();
+    if (!email || !email.includes('@')) return;
+    if (editInvitees.includes(email)) { input.value = ''; return; }
+    editInvitees.push(email);
+    input.value = '';
+    renderEditInvitees();
+}
+
+function removeEditInvitee(email) {
+    editInvitees = editInvitees.filter(e => e !== email);
+    renderEditInvitees();
+}
+
+function renderEditInvitees() {
+    document.getElementById('editInviteeList').innerHTML = editInvitees.map(e => `
+        <div class="invitee-chip">
+            <span>${escHtml(e)}</span>
+            <button onclick="removeEditInvitee('${escHtml(e)}')" title="Remove">✕</button>
+        </div>`).join('');
+}
+
+async function submitEdit() {
+    const id    = document.getElementById('editMeetingId').value;
+    const title = document.getElementById('editTitle').value.trim();
+    const allDay = document.getElementById('editAllDay').checked;
+    const repeat = document.getElementById('editRepeat').value;
+    const repeatEnd = (_fpEditRepeatEnd?.selectedDates?.length > 0 && _fpEditRepeatEnd.input.value.trim()) ? _fpEditRepeatEnd.input.value.trim() : null;
+    const errEl = document.getElementById('editError');
+    const sucEl = document.getElementById('editSuccess');
+    const sd = _fpEditStartDate?.input.value;
+    const st = _fpEditStartTime?.input.value;
+    const ed = _fpEditEndDate?.input.value;
+    const et = _fpEditEndTime?.input.value;
+    const d  = _fpEditAllDay?.input.value;
+
+    errEl.classList.add('hidden');
+    sucEl.classList.add('hidden');
+
+    if (!title) { errEl.textContent = 'Please enter a title.'; errEl.classList.remove('hidden'); return; }
+
+    let start = null, end = null;
+    if (allDay) {
+        const d = document.getElementById('editAllDayDate').value;
+        if (!d) { errEl.textContent = 'Please select a date.'; errEl.classList.remove('hidden'); return; }
+        start = localIso(d, '00:00'); end = localIso(d, '23:59');
+    } else {
+        const sd = document.getElementById('editStartDate').value;
+        const st = document.getElementById('editStartTime').value;
+        const ed = document.getElementById('editEndDate').value;
+        const et = document.getElementById('editEndTime').value;
+        if (!sd || !st || !ed || !et) { errEl.textContent = 'Please fill in start and end date/time.'; errEl.classList.remove('hidden'); return; }
+        start = localIso(sd, st); end = localIso(ed, et);
+        if (new Date(end) <= new Date(start)) { errEl.textContent = 'End must be after start.'; errEl.classList.remove('hidden'); return; }
+    }
+
+    const btn = document.getElementById('editSubmitBtn');
+    const lbl = document.getElementById('editSubmitLabel');
+    const spn = document.getElementById('editSubmitSpinner');
+    btn.disabled = true; lbl.textContent = 'Saving…'; spn.classList.remove('hidden');
+
+    try {
+        const res = await fetch(`/meeting/edit/${id}/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({ title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd, invitees: editInvitees }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update');
+
+        sucEl.textContent = '✅ Meeting updated!';
+        sucEl.classList.remove('hidden');
+
+        allMeetingsCache = null;
+        loadMeetingsForDate();
+        if (document.getElementById('meetingsPanelOverlay').classList.contains('open')) loadAllMeetings();
+
+        setTimeout(closeEditModal, 1500);
+    } catch(err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        btn.disabled = false; lbl.textContent = 'Save Changes'; spn.classList.add('hidden');
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   DELETE CONFIRM
+   ─────────────────────────────────────────────────────────────── */
+
+function openDeleteConfirm(id, title) {
+    deleteTargetId = id;
+    document.getElementById('deleteConfirmMsg').textContent = `Delete "${title}"? This is permanent.`;
+    document.getElementById('deleteConfirmOverlay').classList.add('open');
+}
+
+function closeDeleteConfirm() {
+    document.getElementById('deleteConfirmOverlay').classList.remove('open');
+    deleteTargetId = null;
+}
+
+async function confirmDelete() {
+    if (!deleteTargetId) return;
+    const btn = document.getElementById('confirmDeleteBtn');
+    btn.disabled = true; btn.textContent = 'Deleting…';
+
+    try {
+        const res = await fetch(`/meeting/delete/${deleteTargetId}/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCsrf() },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to delete');
+
+        closeDeleteConfirm();
+        allMeetingsCache = null;
+        loadMeetingsForDate();
+        if (document.getElementById('meetingsPanelOverlay').classList.contains('open')) loadAllMeetings();
+    } catch(err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Delete';
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   CSRF HELPER
+   ─────────────────────────────────────────────────────────────── */
+function getCsrf() {
+    return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   AUTH HELPERS
+   ─────────────────────────────────────────────────────────────── */
+function requireLogin(action, extraData = {}) {
+    sessionStorage.setItem('pending_action', action);
+    if (action === 'join') {
+        sessionStorage.setItem('pending_meeting_id', document.getElementById('room_id')?.value || '');
+        sessionStorage.setItem('pending_passcode',   document.getElementById('password')?.value || '');
+        sessionStorage.setItem('pending_username',   document.getElementById('username')?.value || '');
+    }
+    if (action === 'new_meeting') {
+        sessionStorage.setItem('pending_title', document.getElementById('meetingTitle')?.value || '');
+    }
+    window.location.href = LOGIN_URL + "?next=" + encodeURIComponent('/');
+}
+
+function openNewMeetingDialog(e) {
+    e.preventDefault();
+    if (!IS_AUTHENTICATED) { requireLogin('new_meeting'); return; }
+    const modal = document.getElementById("newMeetingModal");
+    modal.style.display = "flex"; modal.style.visibility = "visible"; modal.style.opacity = "1";
+    document.getElementById("newStep1").classList.remove("hidden");
+    document.getElementById("newStep2").classList.add("hidden");
+    document.getElementById("meetingTitle").focus();
+}
+
+function openJoinModal() {
+    if (!IS_AUTHENTICATED) { requireLogin('join'); return; }
+    const modal = document.getElementById("joinModal");
+    modal.style.display = "flex"; modal.style.visibility = "visible"; modal.style.opacity = "1";
+    document.getElementById("joinStep1").classList.remove("hidden");
+    document.getElementById("joinStep2").classList.add("hidden");
+    const nameField = document.getElementById("username");
+    if (!nameField.value && savedUsername) nameField.value = savedUsername;
+    document.getElementById("room_id").focus();
+}
+
+function _syncAvBtn(btnId, imgId, labelId, isOn, onLabel, offLabel) {
+    const btn = document.getElementById(btnId);
+    const img = document.getElementById(imgId);
+    const lbl = document.getElementById(labelId);
+    img.src = isOn ? img.dataset.on : img.dataset.off;
+    lbl.textContent = isOn ? onLabel : offLabel;
+    btn.classList.toggle("av-on",  isOn);
+    btn.classList.toggle("av-off", !isOn);
+}
+
+function openPermSettings(e) {
+    e.preventDefault();
+    alert("To allow camera/microphone:\n1. Click the lock icon in the address bar.\n2. Set Camera and Microphone to Allow.\n3. Refresh the page.");
+}
+
+function _stopStream(stream) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+}
+
+async function _startPreview(videoElId, camOffElId, permDeniedElId, avatarElId, wantCam, wantMic, avatarText) {
+    const videoEl      = document.getElementById(videoElId);
+    const camOffEl     = document.getElementById(camOffElId);
+    const permDeniedEl = document.getElementById(permDeniedElId);
+    const avatarEl     = document.getElementById(avatarElId);
+    camOffEl.classList.add("hidden");
+    permDeniedEl.classList.add("hidden");
+    if (avatarEl) avatarEl.textContent = avatarText || "?";
+    if (!wantCam && !wantMic) { camOffEl.classList.remove("hidden"); return { stream: null, permDenied: false }; }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: wantCam ? { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+            audio: wantMic,
+        });
+        stream.getAudioTracks().forEach(t => t.enabled = wantMic);
+        stream.getVideoTracks().forEach(t => t.enabled = wantCam);
+        if (wantCam && stream.getVideoTracks().length > 0) {
+            videoEl.srcObject = stream;
+            videoEl.style.transform = "scaleX(-1)";
+            camOffEl.classList.add("hidden");
+        } else { camOffEl.classList.remove("hidden"); }
+        return { stream, permDenied: false };
+    } catch (err) {
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+            permDeniedEl.classList.remove("hidden");
+            return { stream: null, permDenied: true };
+        }
+        camOffEl.classList.remove("hidden");
+        return { stream: null, permDenied: false };
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   JOIN MODAL
+   ─────────────────────────────────────────────────────────────── */
+function closeJoinModal() {
+    const nameField = document.getElementById("username");
+    if (nameField.value.trim()) savedUsername = nameField.value.trim();
+    document.getElementById("joinModal").style.display = "none";
+    _stopStream(joinStream); joinStream = null;
+    document.getElementById("joinPreviewVideo").srcObject = null;
+    document.getElementById("joinStep1").classList.remove("hidden");
+    document.getElementById("joinStep2").classList.add("hidden");
+    document.getElementById("joinError").classList.add("hidden");
+    joinPermDenied = false; joinMicOn = true; joinCamOn = true;
+    _syncAvBtn("joinMicBtn","joinMicIcon","joinMicLabel", true, "Mic On","Mic Off");
+    _syncAvBtn("joinCamBtn","joinCamIcon","joinCamLabel", true, "Cam On","Cam Off");
+}
+
+async function joinGoToPreview() {
+    const meetingId = document.getElementById("room_id").value.replace(/\s/g,"").trim();
+    const passcode  = document.getElementById("password").value.trim().toUpperCase();
+    const username  = document.getElementById("username").value.trim();
+    const errorEl   = document.getElementById("joinError");
+    if (meetingId.length !== 12) { errorEl.textContent = "Please enter a valid 12-digit Meeting ID."; errorEl.classList.remove("hidden"); return; }
+    if (!username)               { errorEl.textContent = "Please enter your name.";                   errorEl.classList.remove("hidden"); return; }
+    errorEl.classList.add("hidden");
+    const btn = document.getElementById("joinNextBtn"), label = document.getElementById("joinNextLabel"), spinner = document.getElementById("joinNextSpinner");
+    label.textContent = "Verifying…"; spinner.classList.remove("hidden"); btn.disabled = true;
+    try {
+        const res  = await fetch("/meeting/join/", {
+            method: "POST",
+            headers: { "Content-Type":"application/json", "X-CSRFToken": getCsrf() },
+            body: JSON.stringify({ meeting_id: meetingId, passcode }),
+        });
+        if (res.redirected) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!res.ok || !data.redirect) { errorEl.textContent = data.error || "Could not join meeting."; errorEl.classList.remove("hidden"); return; }
+        joinRoomName = data.redirect;
+        savedUsername = username;
+        sessionStorage.setItem("join_display_name", username);
+        document.getElementById("joinStep1").classList.add("hidden");
+        document.getElementById("joinStep2").classList.remove("hidden");
+        const avatarText = username.split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2) || "?";
+        const result = await _startPreview("joinPreviewVideo","joinPreviewCamOff","joinPreviewPermDenied","joinPreviewAvatar", joinCamOn, joinMicOn, avatarText);
+        joinStream = result.stream; joinPermDenied = result.permDenied;
+        if (joinPermDenied) { joinMicOn = false; joinCamOn = false; document.getElementById("joinMicBtn").classList.add("pj-disabled"); document.getElementById("joinCamBtn").classList.add("pj-disabled"); }
+        _syncAvBtn("joinMicBtn","joinMicIcon","joinMicLabel", joinMicOn, "Mic On","Mic Off");
+        _syncAvBtn("joinCamBtn","joinCamIcon","joinCamLabel", joinCamOn, "Cam On","Cam Off");
+    } catch (err) { errorEl.textContent = "Network error. Please try again."; errorEl.classList.remove("hidden"); }
+    finally { label.textContent = "Continue"; spinner.classList.add("hidden"); btn.disabled = false; }
+}
+
+function joinBackToDetails() {
+    _stopStream(joinStream); joinStream = null;
+    document.getElementById("joinPreviewVideo").srcObject = null;
+    document.getElementById("joinStep2").classList.add("hidden");
+    document.getElementById("joinStep1").classList.remove("hidden");
+}
+
+function toggleJoinMic() {
+    if (joinPermDenied) return;
+    joinMicOn = !joinMicOn;
+    if (joinStream) joinStream.getAudioTracks().forEach(t => t.enabled = joinMicOn);
+    _syncAvBtn("joinMicBtn","joinMicIcon","joinMicLabel", joinMicOn, "Mic On","Mic Off");
+}
+
+async function toggleJoinCam() {
+    if (joinPermDenied) return;
+    joinCamOn = !joinCamOn;
+    _syncAvBtn("joinCamBtn","joinCamIcon","joinCamLabel", joinCamOn, "Cam On","Cam Off");
+    const videoEl = document.getElementById("joinPreviewVideo"), camOffEl = document.getElementById("joinPreviewCamOff");
+    if (!joinCamOn) { if (joinStream) joinStream.getVideoTracks().forEach(t => t.enabled = false); videoEl.srcObject = null; camOffEl.classList.remove("hidden"); }
+    else {
+        camOffEl.classList.add("hidden");
+        if (joinStream && joinStream.getVideoTracks().length > 0) { joinStream.getVideoTracks().forEach(t => t.enabled = true); videoEl.srcObject = joinStream; videoEl.style.transform = "scaleX(-1)"; }
+        else { try { const vs = await navigator.mediaDevices.getUserMedia({ video: { facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:false }); const vt = vs.getVideoTracks()[0]; if (joinStream) joinStream.addTrack(vt); else joinStream = vs; videoEl.srcObject = joinStream; videoEl.style.transform = "scaleX(-1)"; } catch(e) { joinCamOn=false; camOffEl.classList.remove("hidden"); _syncAvBtn("joinCamBtn","joinCamIcon","joinCamLabel",false,"Cam On","Cam Off"); } }
+    }
+}
+
+async function submitJoinFinal() {
+    const btn = document.getElementById("joinFinalBtn"), label = document.getElementById("joinFinalLabel"), spinner = document.getElementById("joinFinalSpinner");
+    btn.disabled = true; label.textContent = "Joining…"; spinner.classList.remove("hidden");
+    document.getElementById("joinPreviewVideo").srcObject = null;
+    if (joinStream) joinStream.getTracks().forEach(t => t.enabled = false);
+    sessionStorage.setItem("prejoin_mic", joinMicOn ? "1" : "0");
+    sessionStorage.setItem("prejoin_cam", joinCamOn ? "1" : "0");
+    sessionStorage.setItem("prejoin_stream", "1");
+    window._prejoinStream = joinStream; joinStream = null;
+    window.location.href = joinRoomName;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   NEW MEETING MODAL
+   ─────────────────────────────────────────────────────────────── */
+function closeNewMeetingDialog() {
+    document.getElementById("newMeetingModal").style.display = "none";
+    _stopStream(newStream); newStream = null;
+    document.getElementById("newPreviewVideo").srcObject = null;
+    document.getElementById("newStep1").classList.remove("hidden");
+    document.getElementById("newStep2").classList.add("hidden");
+    newPermDenied = false; newMicOn = true; newCamOn = true;
+    _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", true, "Mic On","Mic Off");
+    _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", true, "Cam On","Cam Off");
+}
+
+async function newGoToPreview() {
+    document.getElementById("newStep1").classList.add("hidden");
+    document.getElementById("newStep2").classList.remove("hidden");
+    const user = "{{ request.user.name|default:'' }}";
+    const avatarText = user.split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2) || "?";
+    document.getElementById("newPreviewAvatar").textContent = avatarText;
+    const result = await _startPreview("newPreviewVideo","newPreviewCamOff","newPreviewPermDenied","newPreviewAvatar", newCamOn, newMicOn, avatarText);
+    newStream = result.stream; newPermDenied = result.permDenied;
+    if (newPermDenied) { newMicOn = false; newCamOn = false; document.getElementById("newMicBtn").classList.add("pj-disabled"); document.getElementById("newCamBtn").classList.add("pj-disabled"); }
+    _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", newMicOn, "Mic On","Mic Off");
+    _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", newCamOn, "Cam On","Cam Off");
+}
+
+function newBackToDetails() {
+    _stopStream(newStream); newStream = null;
+    document.getElementById("newPreviewVideo").srcObject = null;
+    document.getElementById("newStep2").classList.add("hidden");
+    document.getElementById("newStep1").classList.remove("hidden");
+}
+
+function toggleNewMic() {
+    if (newPermDenied) return;
+    newMicOn = !newMicOn;
+    if (newStream) newStream.getAudioTracks().forEach(t => t.enabled = newMicOn);
+    _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", newMicOn, "Mic On","Mic Off");
+}
+
+async function toggleNewCam() {
+    if (newPermDenied) return;
+    newCamOn = !newCamOn;
+    _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", newCamOn, "Cam On","Cam Off");
+    const videoEl = document.getElementById("newPreviewVideo"), camOffEl = document.getElementById("newPreviewCamOff");
+    if (!newCamOn) { if (newStream) newStream.getVideoTracks().forEach(t => t.enabled = false); videoEl.srcObject = null; camOffEl.classList.remove("hidden"); }
+    else {
+        camOffEl.classList.add("hidden");
+        if (newStream && newStream.getVideoTracks().length > 0) { newStream.getVideoTracks().forEach(t => t.enabled = true); videoEl.srcObject = newStream; videoEl.style.transform = "scaleX(-1)"; }
+        else { try { const vs = await navigator.mediaDevices.getUserMedia({ video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}}, audio:false }); const vt=vs.getVideoTracks()[0]; if(newStream) newStream.addTrack(vt); else newStream=vs; videoEl.srcObject=newStream; videoEl.style.transform="scaleX(-1)"; } catch(e) { newCamOn=false; camOffEl.classList.remove("hidden"); _syncAvBtn("newCamBtn","newCamIcon","newCamLabel",false,"Cam On","Cam Off"); } }
+    }
+}
+
+async function startMeetingFinal() {
+    const title   = document.getElementById("meetingTitle").value.trim() || "Quick Meeting";
+    const btn = document.getElementById("startFinalBtn"), label = document.getElementById("startFinalLabel"), spinner = document.getElementById("startFinalSpinner");
+    btn.disabled = true; label.textContent = "Starting…"; spinner.classList.remove("hidden");
+    document.getElementById("newPreviewVideo").srcObject = null;
+    if (newStream) newStream.getTracks().forEach(t => t.enabled = false);
+    try {
+        const res = await fetch("/meeting/create/?title=" + encodeURIComponent(title), {
+            method: "POST", headers: { "X-CSRFToken": getCsrf() },
+        });
+        if (res.redirected) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!res.ok || !data.redirect) throw new Error(data.error || "Failed to create meeting");
+        sessionStorage.setItem("prejoin_mic", newMicOn ? "1" : "0");
+        sessionStorage.setItem("prejoin_cam", newCamOn ? "1" : "0");
+        window._prejoinStream = newStream; newStream = null;
+        window.location.href = data.redirect;
+    } catch(err) {
+        label.textContent = "Start Meeting"; spinner.classList.add("hidden"); btn.disabled = false;
+        if (newStream) newStream.getTracks().forEach(t => t.enabled = true);
+        alert("Could not start meeting: " + err.message);
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   UTILITIES
+   ─────────────────────────────────────────────────────────────── */
+function formatMeetingId(input) {
+    let raw = input.value.replace(/\D/g, "").slice(0, 12);
+    input.value = raw.match(/.{1,4}/g)?.join(" ") ?? raw;
+}
+
+function togglePw() {
+    const inp = document.getElementById("password");
+    inp.type = inp.type === "password" ? "text" : "password";
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   SCHEDULE MODAL
+   ─────────────────────────────────────────────────────────────── */
+let _fpSchStartDate = null, _fpSchStartTime = null;
+let _fpSchEndDate   = null, _fpSchEndTime   = null;
+let _fpSchAllDay    = null, _fpSchRepeatEnd = null;
+
+function _initSchFlatpickrs() {
+    const today = new Date();
+    const todayStr = dateToISO(today);
+    const nowH = String(today.getHours()).padStart(2,'0');
+    const nowM = String(today.getMinutes()).padStart(2,'0');
+    const nowTime = `${nowH}:${nowM}`;
+
+    // ── Start Date ──────────────────────────────────────
+    if (!_fpSchStartDate) {
+        _fpSchStartDate = flatpickr('#schStartDate', {
+            dateFormat: 'Y-m-d',
+            defaultDate: today,
+            minDate: 'today',
+            disableMobile: true,
+            onChange([d]) {
+                if (!d) return;
+                const selStr = dateToISO(d);
+                const isToday = selStr === dateToISO(new Date());
+                if (_fpSchStartTime) {
+                    const nowNow = new Date();
+                    const nh = String(nowNow.getHours()).padStart(2,'0');
+                    const nm = String(nowNow.getMinutes()).padStart(2,'0');
+                    _fpSchStartTime.set('minTime', isToday ? `${nh}:${nm}` : '00:00');
+                    // Clear start time if it's now before the new minTime
+                    if (isToday && _fpSchStartTime.selectedDates[0]) {
+                        const sel = _fpSchStartTime.selectedDates[0];
+                        const nowNowMs = nowNow.getHours() * 60 + nowNow.getMinutes();
+                        const selMs = sel.getHours() * 60 + sel.getMinutes();
+                        if (selMs < nowNowMs) _fpSchStartTime.clear();
+                    }
+                }
+                if (_fpSchEndDate) {
+                    _fpSchEndDate.set('minDate', d);
+                    if (_fpSchEndDate.selectedDates[0] && _fpSchEndDate.selectedDates[0] < d) {
+                        _fpSchEndDate.setDate(d, true);
+                    }
+                }
+                if (_fpSchRepeatEnd) {
+                    _fpSchRepeatEnd.set('minDate', d);
+                    if (_fpSchRepeatEnd.selectedDates[0] && _fpSchRepeatEnd.selectedDates[0] <= d) {
+                        _fpSchRepeatEnd.clear();
+                    }
+                }
+            }
+        });
+    } else {
+        _fpSchStartDate.set('minDate', 'today');
+        _fpSchStartDate.setDate(today, true);
+    }
+
+    // ── Start Time ──────────────────────────────────────
+    if (!_fpSchStartTime) {
+        _fpSchStartTime = flatpickr('#schStartTime', {
+            enableTime: true, noCalendar: true,
+            dateFormat: 'H:i',
+            minTime: nowTime,
+            time_24hr: false, disableMobile: true,
+            onChange([t]) {
+                if (!t || !_fpSchEndDate || !_fpSchStartDate) return;
+                const startDateVal = _fpSchStartDate.input.value;
+                const endDateVal   = _fpSchEndDate.input.value;
+                if (startDateVal && endDateVal && startDateVal === endDateVal && _fpSchEndTime) {
+                    const h = String(t.getHours()).padStart(2,'0');
+                    const m = String(t.getMinutes()).padStart(2,'0');
+                    _fpSchEndTime.set('minTime', `${h}:${m}`);
+                    if (_fpSchEndTime.selectedDates[0] && _fpSchEndTime.selectedDates[0] <= t) {
+                        _fpSchEndTime.clear();
+                    }
+                }
+            }
+        });
+    } else {
+        // Always refresh minTime to NOW on every open
+        _fpSchStartTime.set('minTime', nowTime);
+        _fpSchStartTime.clear();   // force user to pick a valid time
+    }
+
+    // ── End Date ────────────────────────────────────────
+    if (!_fpSchEndDate) {
+        _fpSchEndDate = flatpickr('#schEndDate', {
+            dateFormat: 'Y-m-d', defaultDate: today,
+            minDate: today,
+            disableMobile: true,
+            onChange([d]) {
+                if (!d || !_fpSchStartDate) return;
+                const startDateVal = _fpSchStartDate.input.value;
+                if (_fpSchEndTime && _fpSchStartTime && startDateVal === dateToISO(d)) {
+                    const st = _fpSchStartTime.selectedDates[0];
+                    if (st) {
+                        const h = String(st.getHours()).padStart(2,'0');
+                        const m = String(st.getMinutes()).padStart(2,'0');
+                        _fpSchEndTime.set('minTime', `${h}:${m}`);
+                    } else {
+                        _fpSchEndTime.set('minTime', nowTime);
+                    }
+                } else if (_fpSchEndTime) {
+                    _fpSchEndTime.set('minTime', '00:00');
+                }
+            }
+        });
+    } else {
+        _fpSchEndDate.set('minDate', today);
+        _fpSchEndDate.setDate(today, true);
+    }
+
+    // ── End Time ────────────────────────────────────────
+    if (!_fpSchEndTime) {
+        _fpSchEndTime = flatpickr('#schEndTime', {
+            enableTime: true, noCalendar: true,
+            dateFormat: 'H:i',
+            time_24hr: false, disableMobile: true,
+        });
+    } else {
+        _fpSchEndTime.set('minTime', nowTime);
+        _fpSchEndTime.clear();   // clear stale "10:00" default
+    }
+
+    // ── All Day Date ─────────────────────────────────────
+    if (!_fpSchAllDay) {
+        _fpSchAllDay = flatpickr('#schAllDayDate', {
+            dateFormat: 'Y-m-d', defaultDate: today,
+            minDate: 'today',
+            disableMobile: true,
+        });
+    } else {
+        _fpSchAllDay.set('minDate', 'today');
+        _fpSchAllDay.setDate(today, true);
+    }
+
+    // ── Repeat End ───────────────────────────────────────
+    if (!_fpSchRepeatEnd) {
+        _fpSchRepeatEnd = flatpickr('#schRepeatEnd', {
+            dateFormat: 'Y-m-d', disableMobile: true,
+            allowInput: false, minDate: 'today',
+        });
+    } else {
+        _fpSchRepeatEnd.set('minDate', 'today');
+        _fpSchRepeatEnd.clear();
+    }
+}
+
+function openScheduleModal() {
+    if (!IS_AUTHENTICATED) { requireLogin('schedule'); return; }
+    const modal = document.getElementById('scheduleModal');
+    modal.style.display = 'flex'; modal.style.visibility = 'visible'; modal.style.opacity = '1';
+    setTimeout(_initSchFlatpickrs, 0);
+}
+
+function closeScheduleModal() {
+    document.getElementById('scheduleModal').style.display = 'none';
+    schInvitees = [];
+    document.getElementById('schInviteeList').innerHTML = '';
+    document.getElementById('schTitle').value = '';
+    document.getElementById('schRepeat').value = 'none';
+    document.getElementById('schRepeatEndRow').classList.add('hidden');
+    document.getElementById('schAllDay').checked = false;
+    toggleAllDay();
+    document.getElementById('scheduleError').classList.add('hidden');
+    document.getElementById('scheduleSuccess').classList.add('hidden');
+    if (_fpSchRepeatEnd) _fpSchRepeatEnd.clear();
+}
+
+function toggleAllDay() {
+    const allDay = document.getElementById('schAllDay').checked;
+    document.getElementById('schDateTimeRow').classList.toggle('hidden',  allDay);
+    document.getElementById('schAllDayRow').classList.toggle('hidden',   !allDay);
+}
+
+function toggleRepeatEnd() {
+    const val = document.getElementById('schRepeat').value;
+    document.getElementById('schRepeatEndRow').classList.toggle('hidden', val === 'none');
+}
+
+function addInvitee() {
+    const input = document.getElementById('schInviteeInput');
+    const email = input.value.trim().toLowerCase();
+    if (!email || !email.includes('@')) return;
+    if (schInvitees.includes(email)) { input.value = ''; return; }
+    schInvitees.push(email);
+    input.value = '';
+    renderInvitees();
+}
+
+function removeInvitee(email) {
+    schInvitees = schInvitees.filter(e => e !== email);
+    renderInvitees();
+}
+
+function renderInvitees() {
+    document.getElementById('schInviteeList').innerHTML = schInvitees.map(e => `
+        <div class="invitee-chip">
+            <span>${escHtml(e)}</span>
+            <button onclick="removeInvitee('${escHtml(e)}')" title="Remove">✕</button>
+        </div>`).join('');
+}
+
+async function submitSchedule() {
+    const title   = document.getElementById('schTitle').value.trim();
+    const allDay  = document.getElementById('schAllDay').checked;
+    const repeat  = document.getElementById('schRepeat').value;
+    const repeatEnd = document.getElementById('schRepeatEnd').value || null;
+    const errEl   = document.getElementById('scheduleError');
+    const sucEl   = document.getElementById('scheduleSuccess');
+    errEl.classList.add('hidden'); sucEl.classList.add('hidden');
+    if (!title) { errEl.textContent = 'Please enter a meeting title.'; errEl.classList.remove('hidden'); return; }
+    let start = null, end = null;
+    if (allDay) {
+        const d = document.getElementById('schAllDayDate').value;
+        if (!d) { errEl.textContent = 'Please select a date.'; errEl.classList.remove('hidden'); return; }
+        start = localIso(d, '00:00'); end = localIso(d, '23:59');
+    } else {
+        const sd = document.getElementById('schStartDate').value, st = document.getElementById('schStartTime').value;
+        const ed = document.getElementById('schEndDate').value, et = document.getElementById('schEndTime').value;
+        if (!sd || !st || !ed || !et) { errEl.textContent = 'Please fill in start and end date/time.'; errEl.classList.remove('hidden'); return; }
+        start = localIso(sd, st); end = localIso(ed, et);
+        if (new Date(end) <= new Date(start)) { errEl.textContent = 'End time must be after start time.'; errEl.classList.remove('hidden'); return; }
+    }
+    const btn = document.getElementById('schSubmitBtn'), lbl = document.getElementById('schSubmitLabel'), spn = document.getElementById('schSubmitSpinner');
+    btn.disabled = true; lbl.textContent = 'Scheduling…'; spn.classList.remove('hidden');
+    try {
+        const res = await fetch('/meeting/schedule/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({ title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd, invitees: schInvitees }),
+        });
+        if (res.redirected) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to schedule');
+        sucEl.innerHTML = `✅ Meeting scheduled!<br><strong>ID:</strong> ${data.meeting_id.match(/.{1,4}/g).join(' ')} &nbsp; <strong>Passcode:</strong> ${data.passcode}<br><small>Invite emails sent to ${schInvitees.length} invitee(s).</small>`;
+        sucEl.classList.remove('hidden');
+        schInvitees = []; document.getElementById('schInviteeList').innerHTML = '';
+        loadMeetingsForDate();
+    } catch(err) {
+        errEl.textContent = err.message; errEl.classList.remove('hidden');
+    } finally {
+        btn.disabled = false; lbl.textContent = 'Schedule Meeting'; spn.classList.add('hidden');
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   DOMContentLoaded
+   ─────────────────────────────────────────────────────────────── */
+document.addEventListener("DOMContentLoaded", function () {
+    document.getElementById("joinModal").addEventListener("click",       function(e) { if (e.target === this) closeJoinModal(); });
+    document.getElementById("newMeetingModal").addEventListener("click", function(e) { if (e.target === this) closeNewMeetingDialog(); });
+    document.getElementById("scheduleModal").addEventListener("click",   function(e) { if (e.target === this) closeScheduleModal(); });
+    document.getElementById("editMeetingModal").addEventListener("click",function(e) { if (e.target === this) closeEditModal(); });
+
+    setInterval(updateTime, 1000);
+    updateTime();
+    updateDateDisplay();
+
+    if (IS_AUTHENTICATED) loadMeetingsForDate();
+
+    const pendingAction = sessionStorage.getItem('pending_action');
+    if (pendingAction && IS_AUTHENTICATED) {
+        sessionStorage.removeItem('pending_action');
+        if (pendingAction === 'join') {
+            const mid = sessionStorage.getItem('pending_meeting_id') || '';
+            const pass = sessionStorage.getItem('pending_passcode') || '';
+            const user = sessionStorage.getItem('pending_username') || '';
+            sessionStorage.removeItem('pending_meeting_id'); sessionStorage.removeItem('pending_passcode'); sessionStorage.removeItem('pending_username');
+            openJoinModal();
+            if (mid)  document.getElementById('room_id').value  = mid;
+            if (pass) document.getElementById('password').value = pass;
+            if (user) document.getElementById('username').value = user;
+        }
+        if (pendingAction === 'new_meeting') {
+            const title = sessionStorage.getItem('pending_title') || '';
+            sessionStorage.removeItem('pending_title');
+            openNewMeetingDialog({ preventDefault: () => {} });
+            if (title) document.getElementById('meetingTitle').value = title;
+        }
+    }
+});
+
+</script>
+
+<!-- Hidden CSRF token -->
+<form style="display:none">{% csrf_token %}</form>
+{% endblock %}

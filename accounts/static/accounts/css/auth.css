@@ -1,0 +1,60 @@
+.auth-container {
+  background: var(--white);
+  padding: 40px 30px;
+  max-width: 400px;
+  width: 90%;
+  border-radius: 12px;
+  box-shadow: 0 0 12px rgba(0,0,0,0.1);
+  text-align: center;
+  margin: 40px auto;
+}
+
+.auth-container h2 {
+  margin-bottom: 10px;
+  color: var(--black);
+}
+
+.auth-container p {
+  color: var(--dark-grey);
+  font-size: 15px;
+  margin-bottom: 25px;
+}
+
+.auth-container form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.auth-container input[type="email"],
+.auth-container input[type="password"] {
+  padding: 12px;
+  border: 1px solid var(--greenish-blue);
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+}
+
+.auth-container button {
+  padding: 12px;
+  background: var(--greenish-blue);
+  color: var(--white);
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.auth-container a {
+  display: block;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--light-red);
+  text-decoration: none;
+}
+
+.auth-container .error-messages p {
+  font-weight: bold;
+  color: var(--red);
+  margin: 5px 0;
+}

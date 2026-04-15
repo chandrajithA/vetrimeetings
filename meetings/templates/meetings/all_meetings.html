@@ -1,0 +1,775 @@
+{% extends 'meetings/base.html' %}
+{% load static %}
+
+{% block title %}<title>Meetings</title>{% endblock %}
+{% block nav_meetings %}active{% endblock %}
+
+{% block style %}
+<link rel="stylesheet" href="{% static 'meetings/css/meetings.css' %}">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="mp-wrap">
+
+  <!-- ── HEADER ── -->
+  <div class="mp-header">
+    <div class="mp-header-top">
+      <h1>Meetings</h1>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span class="mp-header-meta" id="mpDateLabel"></span>
+        <button class="mp-schedule-btn" onclick="openScheduleModal()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Schedule
+        </button>
+      </div>
+    </div>
+    <div class="mp-tabs">
+      <div class="mp-tab active" onclick="mpSwitchTab('hosted', this)">
+        Hosted by me <span class="mp-count" id="cntHosted">0</span>
+      </div>
+      <div class="mp-tab" onclick="mpSwitchTab('invited', this)">
+        Invited <span class="mp-count" id="cntInvited">0</span>
+      </div>
+      <div class="mp-tab" onclick="mpSwitchTab('all', this)">
+        All <span class="mp-count" id="cntAll">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BODY ── -->
+  <div class="mp-body" id="mpBody">
+    <div class="mp-loading">Loading meetings…</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     EDIT MEETING MODAL
+     ══════════════════════════════════════ -->
+<div id="editMeetingModal" class="mp-modal">
+  <div class="mp-modal-box mp-modal-scroll">
+    <span class="mp-modal-close" onclick="closeEditModal()">&times;</span>
+    <h2 class="mp-modal-title">Edit Meeting</h2>
+    <p class="mp-modal-sub">Update the details for this meeting.</p>
+
+    <input type="hidden" id="editMeetingId">
+    <div id="editError"   class="mp-banner mp-banner-err hidden"></div>
+    <div id="editSuccess" class="mp-banner mp-banner-ok  hidden"></div>
+
+    <div class="mp-field">
+      <label>Meeting Title <span class="req">*</span></label>
+      <input type="text" id="editTitle" maxlength="100" autocomplete="off">
+    </div>
+
+    <div class="mp-field mp-toggle-row">
+      <label>All day</label>
+      <label class="mp-switch">
+        <input type="checkbox" id="editAllDay" onchange="toggleEditAllDay()">
+        <span class="mp-slider"></span>
+      </label>
+    </div>
+
+    <div class="mp-field" id="editDateTimeRow">
+      <label>Start</label>
+      <div class="mp-dt-row">
+        <input type="text" id="editStartDate" placeholder="Select date" readonly class="mp-date-in">
+        <input type="text" id="editStartTime" placeholder="Select time" readonly class="mp-time-in">
+      </div>
+      <label class="mp-label-gap">End</label>
+      <div class="mp-dt-row">
+        <input type="text" id="editEndDate" placeholder="Select date" readonly class="mp-date-in">
+        <input type="text" id="editEndTime" placeholder="Select time" readonly class="mp-time-in">
+      </div>
+    </div>
+
+    <div class="mp-field hidden" id="editAllDayRow">
+      <label>Date</label>
+      <input type="text" id="editAllDayDate" placeholder="Select date" readonly>
+    </div>
+
+    <div class="mp-field">
+      <label>Repeat</label>
+      <select id="editRepeat" onchange="toggleEditRepeatEnd()" class="mp-select">
+        <option value="none">Does not repeat</option>
+        <option value="daily">Daily</option>
+        <option value="weekday">Every weekday (Mon–Fri)</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="yearly">Yearly</option>
+      </select>
+    </div>
+
+    <div class="mp-field hidden" id="editRepeatEndRow">
+      <label>Repeat ends on</label>
+      <input type="text" id="editRepeatEnd" placeholder="Select date (optional)" readonly>
+    </div>
+
+    <div class="mp-field">
+      <label>Invitees</label>
+      <div class="mp-invitee-row">
+        <input type="email" id="editInviteeInput" placeholder="name@example.com"
+               onkeydown="if(event.key==='Enter'){addEditInvitee();event.preventDefault();}">
+        <button type="button" class="mp-add-btn" onclick="addEditInvitee()">Add</button>
+      </div>
+      <div id="editInviteeList" class="mp-chips"></div>
+    </div>
+
+    <button type="button" class="mp-submit-btn" id="editSubmitBtn" onclick="submitEdit()">
+      <span id="editSubmitLabel">Save Changes</span>
+      <span id="editSubmitSpinner" class="mp-spinner hidden"></span>
+    </button>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     SCHEDULE MODAL
+     ══════════════════════════════════════ -->
+<div id="scheduleModal" class="mp-modal">
+  <div class="mp-modal-box mp-modal-scroll">
+    <span class="mp-modal-close" onclick="closeScheduleModal()">&times;</span>
+    <h2 class="mp-modal-title">Schedule a Meeting</h2>
+    <p class="mp-modal-sub">Fill in the details and invite attendees.</p>
+
+    <div id="scheduleError"   class="mp-banner mp-banner-err hidden"></div>
+    <div id="scheduleSuccess" class="mp-banner mp-banner-ok  hidden"></div>
+
+    <div class="mp-field">
+      <label>Meeting Title <span class="req">*</span></label>
+      <input type="text" id="schTitle" placeholder="e.g. Team Standup" maxlength="100" autocomplete="off">
+    </div>
+
+    <div class="mp-field mp-toggle-row">
+      <label>All day</label>
+      <label class="mp-switch">
+        <input type="checkbox" id="schAllDay" onchange="toggleAllDay()">
+        <span class="mp-slider"></span>
+      </label>
+    </div>
+
+    <div class="mp-field" id="schDateTimeRow">
+      <label>Start</label>
+      <div class="mp-dt-row">
+        <input type="text" id="schStartDate" placeholder="Select date" readonly class="mp-date-in">
+        <input type="text" id="schStartTime" placeholder="Select time" readonly class="mp-time-in">
+      </div>
+      <label class="mp-label-gap">End</label>
+      <div class="mp-dt-row">
+        <input type="text" id="schEndDate" placeholder="Select date" readonly class="mp-date-in">
+        <input type="text" id="schEndTime" placeholder="Select time" readonly class="mp-time-in">
+      </div>
+    </div>
+
+    <div class="mp-field hidden" id="schAllDayRow">
+      <label>Date</label>
+      <input type="text" id="schAllDayDate" placeholder="Select date" readonly>
+    </div>
+
+    <div class="mp-field">
+      <label>Repeat</label>
+      <select id="schRepeat" onchange="toggleRepeatEnd()" class="mp-select">
+        <option value="none">Does not repeat</option>
+        <option value="daily">Daily</option>
+        <option value="weekday">Every weekday (Mon–Fri)</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="yearly">Yearly</option>
+      </select>
+    </div>
+
+    <div class="mp-field hidden" id="schRepeatEndRow">
+      <label>Repeat ends on</label>
+      <input type="text" id="schRepeatEnd" placeholder="Select date (optional)" readonly>
+      <span class="mp-hint">Leave blank for no end date</span>
+    </div>
+
+    <div class="mp-field">
+      <label>Add Invitees</label>
+      <div class="mp-invitee-row">
+        <input type="email" id="schInviteeInput" placeholder="name@example.com"
+               onkeydown="if(event.key==='Enter'){addSchInvitee();event.preventDefault();}">
+        <button type="button" class="mp-add-btn" onclick="addSchInvitee()">Add</button>
+      </div>
+      <div id="schInviteeList" class="mp-chips"></div>
+    </div>
+
+    <button type="button" class="mp-submit-btn" id="schSubmitBtn" onclick="submitSchedule()">
+      <span id="schSubmitLabel">Schedule Meeting</span>
+      <span id="schSubmitSpinner" class="mp-spinner hidden"></span>
+    </button>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     DELETE CONFIRM OVERLAY
+     ══════════════════════════════════════ -->
+<div id="deleteConfirmOverlay" class="mp-confirm-overlay">
+  <div class="mp-confirm-box">
+    <h3>Delete Meeting?</h3>
+    <p id="deleteConfirmMsg">This will permanently delete the meeting. This action cannot be undone.</p>
+    <div class="mp-confirm-btns">
+      <button class="mp-confirm-cancel" onclick="closeDeleteConfirm()">Cancel</button>
+      <button class="mp-confirm-delete" id="confirmDeleteBtn" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block script %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+/* ══════════════════════════════════════════════════════
+   STATE
+   ══════════════════════════════════════════════════════ */
+const IS_AUTH = {{ user.is_authenticated|yesno:"true,false" }};
+
+let _mpCache      = null;
+let _mpTab        = 'hosted';
+let editInvitees  = [];
+let schInvitees   = [];
+let deleteTargetId = null;
+
+/* flatpickr handles */
+let _fpES = null, _fpEsT = null, _fpEe = null, _fpEeT = null, _fpEA = null, _fpER = null;
+let _fpSS = null, _fpSsT = null, _fpSe = null, _fpSeT = null, _fpSA = null, _fpSR = null;
+
+/* ══════════════════════════════════════════════════════
+   UTILS
+   ══════════════════════════════════════════════════════ */
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtId(id){ return String(id).match(/.{1,4}/g)?.join(' ') ?? id; }
+function repeatLabel(r){ return ({none:'',daily:'Daily',weekday:'Weekdays',weekly:'Weekly',monthly:'Monthly',yearly:'Yearly'})[r] || r; }
+function formatTime12(iso){ if(!iso) return ''; const d=new Date(iso); let h=d.getHours(),m=d.getMinutes(); const ap=h>=12?'PM':'AM'; h=h%12||12; return `${h}:${String(m).padStart(2,'0')} ${ap}`; }
+function fmtDateShort(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); }
+function dateToISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function localIso(dateStr, timeStr){
+  const off = -new Date().getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const hh = String(Math.floor(Math.abs(off)/60)).padStart(2,'0');
+  const mm = String(Math.abs(off)%60).padStart(2,'0');
+  return `${dateStr}T${timeStr}:00${sign}${hh}:${mm}`;
+}
+
+function getCsrf(){
+  const el = document.querySelector('[name=csrfmiddlewaretoken]');
+  if (el) return el.value;
+  const c = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+  return c ? c.split('=')[1].trim() : '';
+}
+
+function copyText(text, btn){
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+    setTimeout(() => btn.innerHTML = orig, 1500);
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   LOAD & RENDER
+   ══════════════════════════════════════════════════════ */
+async function mpLoad(){
+  document.getElementById('mpBody').innerHTML = '<div class="mp-loading">Loading meetings…</div>';
+  try {
+    const r = await fetch('/meeting/all-scheduled/');
+    const d = await r.json();
+    _mpCache = d.meetings || [];
+    mpUpdateCounts();
+    mpRender();
+  } catch(e){
+    document.getElementById('mpBody').innerHTML =
+      '<div class="mp-empty"><span class="ei">⚠️</span><p>Failed to load meetings. Please refresh.</p></div>';
+  }
+}
+
+function mpUpdateCounts(){
+  if (!_mpCache) return;
+  document.getElementById('cntHosted').textContent  = _mpCache.filter(m => m.is_host).length;
+  document.getElementById('cntInvited').textContent = _mpCache.filter(m => !m.is_host).length;
+  document.getElementById('cntAll').textContent     = _mpCache.length;
+}
+
+function mpSwitchTab(tab, el){
+  _mpTab = tab;
+  document.querySelectorAll('.mp-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  mpRender();
+}
+
+function mpRender(){
+  if (!_mpCache) return;
+  let list = [..._mpCache];
+  if (_mpTab === 'hosted')  list = list.filter(m => m.is_host);
+  if (_mpTab === 'invited') list = list.filter(m => !m.is_host);
+
+  const body = document.getElementById('mpBody');
+  if (!list.length){
+    body.innerHTML = '<div class="mp-empty"><span class="ei">📅</span><p>No meetings in this category.</p></div>';
+    return;
+  }
+
+  body.innerHTML = '<div class="meeting-list">' + list.map(m => {
+    const startTime = m.is_all_day ? 'All day' : formatTime12(m.start);
+    const endTime   = (!m.is_all_day && m.end) ? formatTime12(m.end) : '';
+    const dateStr   = fmtDateShort(m.start);
+    const meetingUrl = m.meeting_url || `${window.location.origin}/room/${m.room_name}/`;
+
+    /* date range / repeat meta */
+    let dateRangeHtml = '';
+    if (m.repeat && m.repeat !== 'none'){
+      const until = m.repeat_end_date ? fmtDateShort(m.repeat_end_date + 'T00:00:00') : '';
+      dateRangeHtml = `<span class="mc-meta-item mc-daterange">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        ${dateStr}
+        ${until ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin:0 2px"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>${until}` : ''}
+        <span class="badge badge-repeat" style="margin-left:4px">${repeatLabel(m.repeat)}</span>
+      </span>`;
+    } else {
+      dateRangeHtml = `<span class="mc-meta-item mc-daterange">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        ${dateStr}
+      </span>`;
+    }
+
+    const editBtn   = m.is_host ? `<button class="mact-btn mact-edit" onclick="openEditModal(${JSON.stringify(m).replace(/"/g,'&quot;')})">Edit</button>` : '';
+    const deleteBtn = m.is_host ? `<button class="mact-btn mact-delete" onclick="openDeleteConfirm(${m.id},'${escHtml(m.title)}')">Delete</button>` : '';
+    const hostPairRow = m.is_host ? `<div class="mact-pair">${editBtn}${deleteBtn}</div>` : '';
+
+    return `
+    <div class="meeting-card ${m.is_host ? 'is-host' : 'is-invitee'} ${m.is_all_day ? 'all-day' : ''}">
+      <div class="meeting-card-accent"></div>
+
+      <div class="meeting-card-time">
+        <span class="mc-time-start">${startTime}</span>
+        ${endTime ? `<span class="mc-time-end">${endTime}</span>` : ''}
+      </div>
+
+      <div class="meeting-card-divider"></div>
+
+      <div class="meeting-card-body">
+        <div class="mc-top-row">
+          <div class="mc-title-badges-row">
+            <span class="mc-title">${escHtml(m.title)}</span>
+            <div class="mc-badges">
+              ${m.is_host ? '<span class="badge badge-host">Host</span>' : '<span class="badge badge-invitee">Invited</span>'}
+            </div>
+          </div>
+        </div>
+
+        <div class="mc-meta">
+          ${dateRangeHtml}
+          <span class="mc-meta-item mc-id">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            ${fmtId(m.meeting_id)}
+            <button class="copy-btn" onclick="copyText('${m.meeting_id}',this)" title="Copy ID">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </span>
+          <span class="mc-meta-item mc-passcode">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+            ${m.passcode}
+            <button class="copy-btn" onclick="copyText('${m.passcode}',this)" title="Copy Passcode">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </span>
+          ${m.invitees && m.invitees.length ? `
+          <span class="mc-meta-item">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            ${m.invitees.length} invitee${m.invitees.length > 1 ? 's' : ''}
+          </span>` : ''}
+        </div>
+      </div>
+
+      <div class="meeting-card-actions">
+        <button class="mact-btn mact-join" onclick="window.location.href='/room/${m.room_name}/'">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Join
+        </button>
+        <div class="mact-pair">
+          <button class="mact-btn mact-copy-d"
+            data-mid="${m.meeting_id}" data-pc="${m.passcode}"
+            data-url="${escHtml(meetingUrl)}" data-title="${escHtml(m.title)}"
+            onclick="copyMeetingDetails(this)" title="Copy meeting details">Copy details</button>
+          <button class="mact-btn mact-copy-l"
+            data-url="${escHtml(meetingUrl)}"
+            onclick="copyMeetingUrl(this)" title="Copy join link">Copy link</button>
+        </div>
+        ${hostPairRow}
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+/* ══════════════════════════════════════════════════════
+   COPY HELPERS
+   ══════════════════════════════════════════════════════ */
+function copyMeetingDetails(btn){
+  const text = `Meeting: ${btn.dataset.title}\nMeeting ID: ${btn.dataset.mid.match(/.{1,4}/g).join(' ')}\nPasscode: ${btn.dataset.pc}\nJoin link: ${btn.dataset.url}`;
+  navigator.clipboard.writeText(text).then(() => { const o=btn.textContent; btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent=o,2000); });
+}
+function copyMeetingUrl(btn){
+  navigator.clipboard.writeText(btn.dataset.url).then(() => { const o=btn.textContent; btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent=o,2000); });
+}
+
+/* ══════════════════════════════════════════════════════
+   EDIT MODAL — FLATPICKR INIT
+   ══════════════════════════════════════════════════════ */
+function _initEditFP(){
+  if (!_fpES) {
+    _fpES = flatpickr('#editStartDate', { dateFormat:'Y-m-d', disableMobile:true,
+      onChange([d]){ if(!d) return;
+        if(_fpEe){ _fpEe.set('minDate',d); if(_fpEe.selectedDates[0]&&_fpEe.selectedDates[0]<d) _fpEe.setDate(d,true); }
+        if(_fpER){ _fpER.set('minDate',d); }
+        if(_fpEe&&_fpEeT&&_fpEsT&&_fpEe.input.value===dateToISO(d)){
+          const st=_fpEsT.selectedDates[0]; if(st) _fpEeT.set('minTime',`${String(st.getHours()).padStart(2,'0')}:${String(st.getMinutes()).padStart(2,'0')}`);
+        } else if(_fpEeT) _fpEeT.set('minTime','00:00');
+      }
+    });
+  } else { _fpES.set('minDate',null); }
+
+  if (!_fpEsT) {
+    _fpEsT = flatpickr('#editStartTime', { enableTime:true, noCalendar:true, dateFormat:'H:i', time_24hr:false, disableMobile:true,
+      onChange([t]){ if(!t||!_fpEe||!_fpES) return;
+        if(_fpES.input.value===_fpEe?.input.value&&_fpEeT){
+          const h=String(t.getHours()).padStart(2,'0'), m=String(t.getMinutes()).padStart(2,'0');
+          _fpEeT.set('minTime',`${h}:${m}`);
+          if(_fpEeT.selectedDates[0]&&_fpEeT.selectedDates[0]<=t) _fpEeT.clear();
+        }
+      }
+    });
+  }
+
+  if (!_fpEe) {
+    _fpEe = flatpickr('#editEndDate', { dateFormat:'Y-m-d', disableMobile:true,
+      onChange([d]){ if(!d||!_fpES) return;
+        if(_fpEeT&&_fpEsT&&_fpES.input.value===dateToISO(d)){
+          const st=_fpEsT.selectedDates[0]; if(st) _fpEeT.set('minTime',`${String(st.getHours()).padStart(2,'0')}:${String(st.getMinutes()).padStart(2,'0')}`);
+        } else if(_fpEeT) _fpEeT.set('minTime','00:00');
+      }
+    });
+  } else { _fpEe.set('minDate',null); }
+
+  if (!_fpEeT) _fpEeT = flatpickr('#editEndTime', { enableTime:true, noCalendar:true, dateFormat:'H:i', time_24hr:false, disableMobile:true });
+  else { _fpEeT.set('minTime','00:00'); }
+
+  if (!_fpEA) _fpEA = flatpickr('#editAllDayDate', { dateFormat:'Y-m-d', disableMobile:true });
+  else { _fpEA.set('minDate',null); }
+
+  if (!_fpER) _fpER = flatpickr('#editRepeatEnd', { dateFormat:'Y-m-d', disableMobile:true, allowInput:false });
+  else { _fpER.set('minDate',null); }
+}
+
+/* ══════════════════════════════════════════════════════
+   EDIT MODAL — OPEN / CLOSE / SAVE
+   ══════════════════════════════════════════════════════ */
+function openEditModal(m){
+  document.getElementById('editMeetingId').value = m.id;
+  document.getElementById('editTitle').value     = m.title;
+  document.getElementById('editRepeat').value    = m.repeat || 'none';
+  document.getElementById('editAllDay').checked  = m.is_all_day;
+
+  editInvitees = m.invitees ? [...m.invitees] : [];
+  renderEditInvitees();
+  toggleEditAllDay();
+  toggleEditRepeatEnd();
+
+  document.getElementById('editError').classList.add('hidden');
+  document.getElementById('editSuccess').classList.add('hidden');
+
+  const modal = document.getElementById('editMeetingModal');
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  _initEditFP();
+
+  setTimeout(() => {
+    let startDate = null;
+    if (m.start){
+      const s = new Date(m.start);
+      startDate = s;
+      if (_fpES) _fpES.setDate(dateToISO(s), true);
+      if (_fpEsT) _fpEsT.setDate(`${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')}`, true);
+      if (m.is_all_day && _fpEA) _fpEA.setDate(dateToISO(s), true);
+    }
+    if (m.end){
+      const e = new Date(m.end);
+      if (_fpEe){ _fpEe.set('minDate',null); _fpEe.setDate(dateToISO(e),true); if(startDate) _fpEe.set('minDate',startDate); }
+      if (_fpEeT){ _fpEeT.set('minTime','00:00'); _fpEeT.setDate(`${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}`,true); }
+    }
+    if (m.repeat_end_date && _fpER){ _fpER.set('minDate',null); _fpER.setDate(m.repeat_end_date,true); if(startDate) _fpER.set('minDate',startDate); }
+  }, 60);
+}
+
+function closeEditModal(){
+  document.getElementById('editMeetingModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function toggleEditAllDay(){
+  const v = document.getElementById('editAllDay').checked;
+  document.getElementById('editDateTimeRow').classList.toggle('hidden', v);
+  document.getElementById('editAllDayRow').classList.toggle('hidden', !v);
+}
+
+function toggleEditRepeatEnd(){
+  const v = document.getElementById('editRepeat').value;
+  document.getElementById('editRepeatEndRow').classList.toggle('hidden', v==='none');
+}
+
+function addEditInvitee(){
+  const input = document.getElementById('editInviteeInput');
+  const email = input.value.trim().toLowerCase();
+  if (!email||!email.includes('@')) return;
+  if (!editInvitees.includes(email)) editInvitees.push(email);
+  input.value = ''; renderEditInvitees();
+}
+function removeEditInvitee(e){ editInvitees = editInvitees.filter(x=>x!==e); renderEditInvitees(); }
+function renderEditInvitees(){
+  document.getElementById('editInviteeList').innerHTML = editInvitees.map(e =>
+    `<div class="mp-chip"><span>${escHtml(e)}</span><button onclick="removeEditInvitee('${escHtml(e)}')" title="Remove">✕</button></div>`
+  ).join('');
+}
+
+async function submitEdit(){
+  const id    = document.getElementById('editMeetingId').value;
+  const title = document.getElementById('editTitle').value.trim();
+  const allDay = document.getElementById('editAllDay').checked;
+  const repeat = document.getElementById('editRepeat').value;
+  const repeatEnd = (_fpER?.selectedDates?.length > 0 && _fpER.input.value.trim()) ? _fpER.input.value.trim() : null;
+  const errEl = document.getElementById('editError');
+  const sucEl = document.getElementById('editSuccess');
+  errEl.classList.add('hidden'); sucEl.classList.add('hidden');
+
+  if (!title){ errEl.textContent='Please enter a title.'; errEl.classList.remove('hidden'); return; }
+
+  let start=null, end=null;
+  if (allDay){
+    const d=document.getElementById('editAllDayDate').value;
+    if(!d){ errEl.textContent='Please select a date.'; errEl.classList.remove('hidden'); return; }
+    start=localIso(d,'00:00'); end=localIso(d,'23:59');
+  } else {
+    const sd=document.getElementById('editStartDate').value, st=document.getElementById('editStartTime').value;
+    const ed=document.getElementById('editEndDate').value,   et=document.getElementById('editEndTime').value;
+    if(!sd||!st||!ed||!et){ errEl.textContent='Please fill in start and end date/time.'; errEl.classList.remove('hidden'); return; }
+    start=localIso(sd,st); end=localIso(ed,et);
+    if(new Date(end)<=new Date(start)){ errEl.textContent='End must be after start.'; errEl.classList.remove('hidden'); return; }
+  }
+
+  const btn=document.getElementById('editSubmitBtn'), lbl=document.getElementById('editSubmitLabel'), spn=document.getElementById('editSubmitSpinner');
+  btn.disabled=true; lbl.textContent='Saving…'; spn.classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/meeting/edit/${id}/`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body:JSON.stringify({title,start,end,all_day:allDay,repeat,repeat_end:repeatEnd,invitees:editInvitees}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error||'Failed to update');
+    sucEl.textContent='✅ Meeting updated!'; sucEl.classList.remove('hidden');
+    await mpLoad();
+    setTimeout(closeEditModal,1500);
+  } catch(err){
+    errEl.textContent=err.message; errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled=false; lbl.textContent='Save Changes'; spn.classList.add('hidden');
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   SCHEDULE MODAL — FLATPICKR INIT
+   ══════════════════════════════════════════════════════ */
+function _initSchFP(){
+  const today    = new Date();
+  const todayStr = dateToISO(today);
+  const nowTime  = `${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
+
+  if (!_fpSS){ _fpSS = flatpickr('#schStartDate',{ dateFormat:'Y-m-d', defaultDate:today, minDate:'today', disableMobile:true,
+    onChange([d]){ if(!d) return;
+      const isToday = dateToISO(d)===dateToISO(new Date());
+      if(_fpSsT){ const n=new Date(); _fpSsT.set('minTime',isToday?`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`:'00:00'); }
+      if(_fpSe){ _fpSe.set('minDate',d); if(_fpSe.selectedDates[0]&&_fpSe.selectedDates[0]<d) _fpSe.setDate(d,true); }
+      if(_fpSR){ _fpSR.set('minDate',d); }
+    }
+  }); } else { _fpSS.set('minDate','today'); _fpSS.setDate(today,true); }
+
+  if (!_fpSsT){ _fpSsT = flatpickr('#schStartTime',{ enableTime:true, noCalendar:true, dateFormat:'H:i', minTime:nowTime, time_24hr:false, disableMobile:true,
+    onChange([t]){ if(!t||!_fpSe||!_fpSS) return;
+      if(_fpSS.input.value===_fpSe?.input.value&&_fpSeT){
+        const h=String(t.getHours()).padStart(2,'0'),m=String(t.getMinutes()).padStart(2,'0');
+        _fpSeT.set('minTime',`${h}:${m}`); if(_fpSeT.selectedDates[0]&&_fpSeT.selectedDates[0]<=t) _fpSeT.clear();
+      }
+    }
+  }); } else { _fpSsT.set('minTime',nowTime); _fpSsT.clear(); }
+
+  if (!_fpSe){ _fpSe = flatpickr('#schEndDate',{ dateFormat:'Y-m-d', defaultDate:today, minDate:today, disableMobile:true,
+    onChange([d]){ if(!d||!_fpSS) return;
+      if(_fpSeT&&_fpSsT&&_fpSS.input.value===dateToISO(d)){ const st=_fpSsT.selectedDates[0]; if(st) _fpSeT.set('minTime',`${String(st.getHours()).padStart(2,'0')}:${String(st.getMinutes()).padStart(2,'0')}`); }
+      else if(_fpSeT) _fpSeT.set('minTime','00:00');
+    }
+  }); } else { _fpSe.set('minDate',today); _fpSe.setDate(today,true); }
+
+  if (!_fpSeT){ _fpSeT = flatpickr('#schEndTime',{ enableTime:true, noCalendar:true, dateFormat:'H:i', time_24hr:false, disableMobile:true });
+  } else { _fpSeT.set('minTime',nowTime); _fpSeT.clear(); }
+
+  if (!_fpSA){ _fpSA = flatpickr('#schAllDayDate',{ dateFormat:'Y-m-d', defaultDate:today, minDate:'today', disableMobile:true });
+  } else { _fpSA.set('minDate','today'); _fpSA.setDate(today,true); }
+
+  if (!_fpSR){ _fpSR = flatpickr('#schRepeatEnd',{ dateFormat:'Y-m-d', disableMobile:true, allowInput:false, minDate:'today' });
+  } else { _fpSR.set('minDate','today'); _fpSR.clear(); }
+}
+
+/* ══════════════════════════════════════════════════════
+   SCHEDULE MODAL — OPEN / CLOSE / SUBMIT
+   ══════════════════════════════════════════════════════ */
+function openScheduleModal(){
+  document.getElementById('scheduleModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(_initSchFP, 0);
+}
+
+function closeScheduleModal(){
+  document.getElementById('scheduleModal').classList.remove('open');
+  document.body.style.overflow = '';
+  schInvitees = [];
+  document.getElementById('schInviteeList').innerHTML = '';
+  document.getElementById('schTitle').value = '';
+  document.getElementById('schRepeat').value = 'none';
+  document.getElementById('schRepeatEndRow').classList.add('hidden');
+  document.getElementById('schAllDay').checked = false;
+  toggleAllDay();
+  document.getElementById('scheduleError').classList.add('hidden');
+  document.getElementById('scheduleSuccess').classList.add('hidden');
+  if(_fpSR) _fpSR.clear();
+}
+
+function toggleAllDay(){
+  const v = document.getElementById('schAllDay').checked;
+  document.getElementById('schDateTimeRow').classList.toggle('hidden', v);
+  document.getElementById('schAllDayRow').classList.toggle('hidden', !v);
+}
+
+function toggleRepeatEnd(){
+  const v = document.getElementById('schRepeat').value;
+  document.getElementById('schRepeatEndRow').classList.toggle('hidden', v==='none');
+}
+
+function addSchInvitee(){
+  const input = document.getElementById('schInviteeInput');
+  const email = input.value.trim().toLowerCase();
+  if (!email||!email.includes('@')) return;
+  if (!schInvitees.includes(email)) schInvitees.push(email);
+  input.value=''; renderSchInvitees();
+}
+function removeSchInvitee(e){ schInvitees=schInvitees.filter(x=>x!==e); renderSchInvitees(); }
+function renderSchInvitees(){
+  document.getElementById('schInviteeList').innerHTML = schInvitees.map(e =>
+    `<div class="mp-chip"><span>${escHtml(e)}</span><button onclick="removeSchInvitee('${escHtml(e)}')" title="Remove">✕</button></div>`
+  ).join('');
+}
+
+async function submitSchedule(){
+  const title  = document.getElementById('schTitle').value.trim();
+  const allDay = document.getElementById('schAllDay').checked;
+  const repeat = document.getElementById('schRepeat').value;
+  const repeatEnd = document.getElementById('schRepeatEnd').value||null;
+  const errEl  = document.getElementById('scheduleError');
+  const sucEl  = document.getElementById('scheduleSuccess');
+  errEl.classList.add('hidden'); sucEl.classList.add('hidden');
+
+  if (!title){ errEl.textContent='Please enter a meeting title.'; errEl.classList.remove('hidden'); return; }
+  let start=null, end=null;
+  if (allDay){
+    const d=document.getElementById('schAllDayDate').value;
+    if(!d){ errEl.textContent='Please select a date.'; errEl.classList.remove('hidden'); return; }
+    start=localIso(d,'00:00'); end=localIso(d,'23:59');
+  } else {
+    const sd=document.getElementById('schStartDate').value, st=document.getElementById('schStartTime').value;
+    const ed=document.getElementById('schEndDate').value,   et=document.getElementById('schEndTime').value;
+    if(!sd||!st||!ed||!et){ errEl.textContent='Please fill in start and end date/time.'; errEl.classList.remove('hidden'); return; }
+    start=localIso(sd,st); end=localIso(ed,et);
+    if(new Date(end)<=new Date(start)){ errEl.textContent='End time must be after start time.'; errEl.classList.remove('hidden'); return; }
+  }
+
+  const btn=document.getElementById('schSubmitBtn'), lbl=document.getElementById('schSubmitLabel'), spn=document.getElementById('schSubmitSpinner');
+  btn.disabled=true; lbl.textContent='Scheduling…'; spn.classList.remove('hidden');
+
+  try {
+    const res = await fetch('/meeting/schedule/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body:JSON.stringify({title,start,end,all_day:allDay,repeat,repeat_end:repeatEnd,invitees:schInvitees}),
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Failed to schedule');
+    sucEl.innerHTML=`✅ Meeting scheduled!<br><strong>ID:</strong> ${data.meeting_id.match(/.{1,4}/g).join(' ')} &nbsp; <strong>Passcode:</strong> ${data.passcode}`;
+    sucEl.classList.remove('hidden');
+    schInvitees=[]; document.getElementById('schInviteeList').innerHTML='';
+    await mpLoad();
+  } catch(err){
+    errEl.textContent=err.message; errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled=false; lbl.textContent='Schedule Meeting'; spn.classList.add('hidden');
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   DELETE CONFIRM
+   ══════════════════════════════════════════════════════ */
+function openDeleteConfirm(id, title){
+  deleteTargetId = id;
+  document.getElementById('deleteConfirmMsg').textContent = `Delete "${title}"? This is permanent and cannot be undone.`;
+  document.getElementById('deleteConfirmOverlay').classList.add('open');
+}
+
+function closeDeleteConfirm(){
+  document.getElementById('deleteConfirmOverlay').classList.remove('open');
+  deleteTargetId = null;
+}
+
+async function confirmDelete(){
+  if (!deleteTargetId) return;
+  const btn = document.getElementById('confirmDeleteBtn');
+  btn.disabled=true; btn.textContent='Deleting…';
+  try {
+    const res = await fetch(`/meeting/delete/${deleteTargetId}/`,{
+      method:'POST', headers:{'X-CSRFToken':getCsrf()},
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to delete');
+    closeDeleteConfirm();
+    await mpLoad();
+  } catch(err){
+    alert('Error: '+err.message);
+  } finally {
+    btn.disabled=false; btn.textContent='Delete';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   DATE LABEL & INIT
+   ══════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  const d = new Date();
+  document.getElementById('mpDateLabel').textContent =
+    d.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  mpLoad();
+
+  /* close modals on Escape */
+  document.addEventListener('keydown', e => {
+    if (e.key==='Escape'){ closeEditModal(); closeScheduleModal(); closeDeleteConfirm(); }
+  });
+
+  /* close modals on backdrop click */
+  document.getElementById('editMeetingModal').addEventListener('click', function(e){ if(e.target===this) closeEditModal(); });
+  document.getElementById('scheduleModal').addEventListener('click',    function(e){ if(e.target===this) closeScheduleModal(); });
+});
+</script>
+
+<!-- CSRF token for JS fetch calls -->
+<form style="display:none">{% csrf_token %}</form>
+{% endblock %}

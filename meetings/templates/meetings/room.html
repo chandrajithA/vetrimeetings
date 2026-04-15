@@ -1,0 +1,521 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="{% static 'meetings/images/video-white.png' %}">
+    <title>{{ meeting.title }} — Vetri Meetings</title>
+    <link rel="stylesheet" href="{% static 'meetings/css/common.css' %}">
+    <link rel="stylesheet" href="{% static 'meetings/css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'meetings/css/room.css' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     MAIN MEETING UI  (shown immediately — no lobby)
+     ══════════════════════════════════════════════════════ -->
+<div class="meeting-wrapper" id="meetingWrapper">
+
+    <div id="statusBar" class="status-bar hidden"></div>
+
+    <div style="display:flex;align-items:center;gap:12px;position:relative;">
+        <button class="meeting-title-btn" id="meetingInfoBtn" onclick="toggleMeetingInfo()" title="Meeting info">
+            {{ meeting.title }}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:6px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </button>
+
+        <!-- Meeting Info Panel -->
+        <div id="meetingInfoPanel" class="meeting-info-panel hidden">
+            <div class="mip-header">
+                <span class="mip-title">{{ meeting.title }}</span>
+                <button class="mip-close" onclick="toggleMeetingInfo()">✕</button>
+            </div>
+            <div class="mip-body">
+                <div class="mip-row">
+                    <span class="mip-label">Invite link</span>
+                    <div class="mip-val-row">
+                        <span class="mip-val mip-url" id="mipUrl">{{ meeting_url }}</span>
+                        <button class="mip-copy-btn" onclick="mipCopy('url')" id="mipCopyUrl" title="Copy link">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mip-row">
+                    <span class="mip-label">Meeting ID</span>
+                    <div class="mip-val-row">
+                        <span class="mip-val" id="mipId">{{ meeting.meeting_id|stringformat:"s" }}</span>
+                        <button class="mip-copy-btn" onclick="mipCopy('id')" id="mipCopyId" title="Copy ID">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mip-row">
+                    <span class="mip-label">Passcode</span>
+                    <div class="mip-val-row">
+                        <span class="mip-val" id="mipPc">{{ meeting.passcode }}</span>
+                        <button class="mip-copy-btn" onclick="mipCopy('passcode')" id="mipCopyPc" title="Copy passcode">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mip-divider"></div>
+                <button class="mip-copy-all-btn" onclick="mipCopy('all')" id="mipCopyAll">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy all details
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="video-area">
+        <div class="video-pages">
+            <div id="videoContainer" class="video-container layout-1"></div>
+        </div>
+        <div id="pagination" class="pagination hidden">
+            <button class="page-arrow" onclick="changePage(-1)">&#8249;</button>
+            <div id="pageDots"></div>
+            <button class="page-arrow" onclick="changePage(1)">&#8250;</button>
+        </div>
+    </div>
+
+    <div class="controls">
+
+        <button onclick="toggleAudio()" id="audioBtn" class="ctrl-btn" title="Mute/Unmute">
+            <img id="audioBtnImg"
+                 src="{% static 'meetings/images/audio-on.png' %}"
+                 data-src-on="{% static 'meetings/images/audio-on.png' %}"
+                 data-src-off="{% static 'meetings/images/audio-off.png' %}"
+                 alt="Mic" class="ctrl-icon">
+        </button>
+
+        <button onclick="toggleVideo()" id="videoBtn" class="ctrl-btn" title="Camera on/off">
+            <img id="videoBtnImg"
+                 src="{% static 'meetings/images/video-on.png' %}"
+                 data-src-on="{% static 'meetings/images/video-on.png' %}"
+                 data-src-off="{% static 'meetings/images/video-off.png' %}"
+                 alt="Camera" class="ctrl-icon">
+        </button>
+
+        <button onclick="flipCamera()" id="flipBtn" class="ctrl-btn" title="Flip camera" style="display:none">
+            <img id="flipBtnImg"
+                 src="{% static 'meetings/images/flip.png' %}"
+                 data-src-front="{% static 'meetings/images/flip.png' %}"
+                 data-src-back="{% static 'meetings/images/flip.png' %}"
+                 alt="Flip" class="ctrl-icon">
+        </button>
+
+        <button onclick="toggleScreenShare()" id="screenShareBtn" class="ctrl-btn" title="Share screen">
+            <img id="screenShareBtnImg"
+                 src="{% static 'meetings/images/screenshare.png' %}"
+                 data-src-on="{% static 'meetings/images/screenshare.png' %}"
+                 data-src-off="{% static 'meetings/images/screenshare-off.png' %}"
+                 alt="Screen Share" class="ctrl-icon">
+        </button>
+
+        <button onclick="toggleChat()" id="chatBtn" class="ctrl-btn" title="Chat">
+            <img id="chatBtnImg"
+                 src="{% static 'meetings/images/chat-white.png' %}"
+                 alt="Chat" class="ctrl-icon">
+        </button>
+
+        <button onclick="toggleParticipants()" id="participantsBtn" class="ctrl-btn" title="Participants">
+            <img id="participantsBtnImg"
+                 src="{% static 'meetings/images/participants.png' %}"
+                 alt="Participants" class="ctrl-icon">
+        </button>
+
+        {% if is_host %}
+        <button onclick="toggleRecording()" id="recordBtn" class="ctrl-btn" title="Record">
+            <img id="recordBtnImg"
+                 src="{% static 'meetings/images/record.png' %}"
+                 data-src-on="{% static 'meetings/images/record.png' %}"
+                 data-src-off="{% static 'meetings/images/record-no.png' %}"
+                 alt="Record" class="ctrl-icon">
+        </button>
+        <button onclick="muteAll()" class="ctrl-btn" title="Mute all">
+            <img src="{% static 'meetings/images/mute-all.png' %}" alt="Mute All" class="ctrl-icon">
+            Mute All
+        </button>
+        <button onclick="endMeeting()" class="ctrl-btn ctrl-danger" title="End meeting">
+            <img src="{% static 'meetings/images/end.png' %}" alt="End" class="ctrl-icon">
+        </button>
+        {% else %}
+        <button onclick="leaveMeeting()" class="ctrl-btn ctrl-danger" title="Leave meeting">
+            <img src="{% static 'meetings/images/remove-button.png' %}" alt="Leave" class="ctrl-icon">
+        </button>
+        {% endif %}
+
+    </div>
+
+    <div id="chatSidebar" class="chat-sidebar hidden">
+        <div class="chat-header">
+            <span>Meeting Chat</span>
+            <button onclick="toggleChat()" class="chat-close">✕</button>
+        </div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="Send a message…"
+                   onkeydown="if(event.key==='Enter'){ sendChatMessage(this.value); this.value=''; }">
+            <button onclick="sendChatMessage(document.getElementById('chatInput').value); document.getElementById('chatInput').value='';">Send</button>
+        </div>
+    </div>
+
+    <div id="participantsSidebar" class="participants-sidebar hidden">
+        <div class="participants-header">
+            <span>Participants (<span id="panelParticipantCount">0</span>)</span>
+            <button onclick="toggleParticipants()" class="participants-close">✕</button>
+        </div>
+        <div id="participantsList" class="participants-list"></div>
+    </div>
+
+</div>
+
+
+<!-- ══ PRE-JOIN LOBBY (shown for direct link joins) ══ -->
+<div id="prejoinLobby" class="prejoin-overlay hidden">
+    <div class="prejoin-box">
+        <h2>Ready to join?</h2>
+        <p class="prejoin-subtitle">{{ meeting.title }}</p>
+
+        <div class="preview-video-wrap" id="lobbyPreviewWrap">
+            <video id="lobbyVideo" class="preview-video" autoplay muted playsinline></video>
+            <div id="lobbyCamOff" class="preview-cam-off">
+                <div class="preview-avatar" id="lobbyAvatar">?</div>
+                <span>Camera is off</span>
+            </div>
+            <div id="lobbyPermDenied" class="preview-perm-denied hidden">
+                Camera / microphone access was denied.&nbsp;
+                <a href="#" onclick="lobbyOpenPermSettings(event)">How to fix →</a>
+            </div>
+        </div>
+
+        <div class="av-toggles" style="margin-top:14px;">
+            <button type="button" class="av-btn av-on" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
+                <img src="{% static 'meetings/images/audio-on-black.png' %}" id="lobbyMicIcon"
+                     data-on="{% static 'meetings/images/audio-on-black.png' %}"
+                     data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
+                <span id="lobbyMicLabel">Mic On</span>
+            </button>
+            <button type="button" class="av-btn av-on" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
+                <img src="{% static 'meetings/images/video-on-black.png' %}" id="lobbyCamIcon"
+                     data-on="{% static 'meetings/images/video-on-black.png' %}"
+                     data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
+                <span id="lobbyCamLabel">Cam On</span>
+            </button>
+        </div>
+
+        <div class="join-field" style="margin-top:14px;">
+            <label for="lobbyName">Your Name</label>
+            <input type="text" id="lobbyName" placeholder="Enter your name"
+                   value="{{ request.user.name|default:'' }}" maxlength="60" autocomplete="off">
+        </div>
+
+        <button class="join-btn" id="lobbyJoinBtn" onclick="lobbyJoin()" style="margin-top:14px;">
+            <span id="lobbyJoinLabel">Join Meeting</span>
+            <span id="lobbyJoinSpinner" class="spinner hidden"></span>
+        </button>
+
+        <button class="join-btn" id="lobbyCancelBtn" 
+                onclick="window.location.href='/'"
+                style="margin-top:10px; background: transparent; border: 0.5px solid rgba(255,255,255,0.2); color: var(--color-text-secondary);">
+            Cancel
+        </button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     Django → JS globals
+     ══════════════════════════════════════════════════════ -->
+<script>
+    const ROOM_NAME   = "{{ room_name }}";
+    const IS_HOST     = {{ is_host|yesno:"true,false" }};
+    const MEETING_URL = "{{ meeting_url }}";
+
+    const ICONS = {
+        micOn:  "{% static 'meetings/images/audio-on.png' %}",
+        micOff: "{% static 'meetings/images/audio-off.png' %}",
+        camOn:  "{% static 'meetings/images/video-on.png' %}",
+        camOff: "{% static 'meetings/images/video-off.png' %}",
+    };
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+<script src="{% static 'meetings/js/webrtc.js' %}"></script>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   Boot — read AV choices stored by dashboard preview
+   ══════════════════════════════════════════════════════ */
+
+
+/* ══════════════════════════════════════════════════════
+   UI helpers (chat, participants, copy link, flip show)
+   ══════════════════════════════════════════════════════ */
+
+
+
+function toggleChat() {
+    const pSidebar = document.getElementById("participantsSidebar");
+    if (!pSidebar.classList.contains("hidden")) {
+        pSidebar.classList.add("hidden");
+        document.getElementById("participantsBtn")?.classList.remove("active");
+    }
+    const sidebar  = document.getElementById("chatSidebar");
+    const isHidden = sidebar.classList.toggle("hidden");
+    document.getElementById("chatBtn")?.classList.toggle("active", !isHidden);
+    if (!isHidden) { if (typeof _onChatOpened  === "function") _onChatOpened(); }
+    else           { if (typeof _onChatClosed  === "function") _onChatClosed(); }
+}
+
+function toggleParticipants() {
+    const chatSidebar = document.getElementById("chatSidebar");
+    if (!chatSidebar.classList.contains("hidden")) {
+        chatSidebar.classList.add("hidden");
+        document.getElementById("chatBtn")?.classList.remove("active");
+        if (typeof _onChatClosed === "function") _onChatClosed();
+    }
+    const sidebar  = document.getElementById("participantsSidebar");
+    const isHidden = sidebar.classList.toggle("hidden");
+    document.getElementById("participantsBtn")?.classList.toggle("active", !isHidden);
+    if (!isHidden && typeof renderParticipantsPanel === "function") renderParticipantsPanel();
+}
+
+function toggleMeetingInfo() {
+    document.getElementById('meetingInfoPanel').classList.toggle('hidden');
+}
+
+// Close panel when clicking outside
+document.addEventListener('click', function(e) {
+    const panel = document.getElementById('meetingInfoPanel');
+    const btn   = document.getElementById('meetingInfoBtn');
+    if (panel && !panel.classList.contains('hidden')) {
+        if (!panel.contains(e.target) && !btn.contains(e.target)) {
+            panel.classList.add('hidden');
+        }
+    }
+});
+
+function mipCopy(type) {
+    const url  = document.getElementById('mipUrl')?.textContent.trim() || '';
+    const rawId = document.getElementById('mipId')?.textContent.trim() || '';
+    const pc   = document.getElementById('mipPc')?.textContent.trim() || '';
+    const fmtId = rawId.match(/.{1,4}/g)?.join(' ') ?? rawId;
+
+    let text = '';
+    let btnId = '';
+    if (type === 'url')     { text = url;    btnId = 'mipCopyUrl'; }
+    if (type === 'id')      { text = fmtId;  btnId = 'mipCopyId';  }
+    if (type === 'passcode'){ text = pc;     btnId = 'mipCopyPc';  }
+    if (type === 'all') {
+        text = `Meeting: {{ meeting.title }}\nInvite link: ${url}\nMeeting ID: ${fmtId}\nPasscode: ${pc}`;
+        btnId = 'mipCopyAll';
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const orig = btn.innerHTML;
+        btn.classList.add('copied');
+        btn.innerHTML = type === 'all'
+            ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!'
+            : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2000);
+    }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+    });
+}
+
+document.addEventListener("click", () => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) { try { new AC().resume(); } catch(e) {} }
+}, { once: true });
+
+// Show flip button on mobile
+if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+    document.getElementById("flipBtn").style.display = "flex";
+}
+
+(function () {
+    const hasPrejoin = sessionStorage.getItem("prejoin_mic") !== null;
+    if (hasPrejoin) return;
+
+    let lobbyMicOn    = true;
+    let lobbyCamOn    = true;
+    let lobbyStream   = null;
+    let lobbyPermDenied = false;
+
+    const lobby = document.getElementById("prejoinLobby");
+    lobby.classList.remove("hidden");
+    document.getElementById("meetingWrapper").style.visibility = "hidden";
+
+    /* ── same helper as dashboard ── */
+    function syncBtn(btnId, imgId, labelId, isOn, onLabel, offLabel) {
+        const btn = document.getElementById(btnId);
+        const img = document.getElementById(imgId);
+        const lbl = document.getElementById(labelId);
+        img.src = isOn ? img.dataset.on : img.dataset.off;
+        lbl.textContent = isOn ? onLabel : offLabel;
+        btn.classList.toggle("av-on",  isOn);
+        btn.classList.toggle("av-off", !isOn);
+    }
+
+    window.lobbyOpenPermSettings = function(e) {
+        e.preventDefault();
+        alert("To allow camera/microphone:\n1. Click the lock icon in the address bar.\n2. Set Camera and Microphone to Allow.\n3. Refresh the page.");
+    };
+
+    async function startLobbyPreview() {
+        const videoEl      = document.getElementById("lobbyVideo");
+        const camOffEl     = document.getElementById("lobbyCamOff");
+        const permDeniedEl = document.getElementById("lobbyPermDenied");
+
+        camOffEl.classList.add("hidden");
+        permDeniedEl.classList.add("hidden");
+
+        try {
+            lobbyStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: true
+            });
+            lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
+            lobbyStream.getVideoTracks().forEach(t => t.enabled = lobbyCamOn);
+
+            if (lobbyCamOn && lobbyStream.getVideoTracks().length > 0) {
+                videoEl.srcObject = lobbyStream;
+                videoEl.style.transform = "scaleX(-1)";
+                camOffEl.classList.add("hidden");
+            } else {
+                camOffEl.classList.remove("hidden");
+            }
+        } catch (err) {
+            console.warn("Lobby preview error:", err.name);
+            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                permDeniedEl.classList.remove("hidden");
+                lobbyPermDenied = true;
+                lobbyMicOn = false; lobbyCamOn = false;
+                document.getElementById("lobbyMicBtn").classList.add("pj-disabled");
+                document.getElementById("lobbyCamBtn").classList.add("pj-disabled");
+            } else {
+                camOffEl.classList.remove("hidden");
+            }
+        }
+        syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
+        syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
+    }
+
+    window.toggleLobbyMic = function () {
+        if (lobbyPermDenied) return;
+        lobbyMicOn = !lobbyMicOn;
+        if (lobbyStream) lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
+        syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
+    };
+
+    window.toggleLobbyCam = async function () {
+        if (lobbyPermDenied) return;
+        lobbyCamOn = !lobbyCamOn;
+        syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
+
+        const videoEl  = document.getElementById("lobbyVideo");
+        const camOffEl = document.getElementById("lobbyCamOff");
+
+        if (!lobbyCamOn) {
+            if (lobbyStream) lobbyStream.getVideoTracks().forEach(t => t.enabled = false);
+            videoEl.srcObject = null;
+            camOffEl.classList.remove("hidden");
+        } else {
+            camOffEl.classList.add("hidden");
+            if (lobbyStream && lobbyStream.getVideoTracks().length > 0) {
+                lobbyStream.getVideoTracks().forEach(t => t.enabled = true);
+                videoEl.srcObject = lobbyStream;
+                videoEl.style.transform = "scaleX(-1)";
+            } else {
+                try {
+                    const vs = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                        audio: false
+                    });
+                    if (lobbyStream) lobbyStream.addTrack(vs.getVideoTracks()[0]);
+                    else lobbyStream = vs;
+                    videoEl.srcObject = lobbyStream;
+                    videoEl.style.transform = "scaleX(-1)";
+                } catch (e) {
+                    lobbyCamOn = false;
+                    camOffEl.classList.remove("hidden");
+                    syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", false, "Cam On", "Cam Off");
+                }
+            }
+        }
+    };
+
+    window.lobbyJoin = function () {
+        const name = document.getElementById("lobbyName").value.trim();
+        if (!name) { document.getElementById("lobbyName").focus(); return; }
+
+        const btn     = document.getElementById("lobbyJoinBtn");
+        const label   = document.getElementById("lobbyJoinLabel");
+        const spinner = document.getElementById("lobbyJoinSpinner");
+        btn.disabled = true; label.textContent = "Joining…"; spinner.classList.remove("hidden");
+
+        sessionStorage.setItem("join_display_name", name);
+        sessionStorage.setItem("prejoin_mic", lobbyMicOn ? "1" : "0");
+        sessionStorage.setItem("prejoin_cam", lobbyCamOn ? "1" : "0");
+
+        document.getElementById("lobbyVideo").srcObject = null;
+        if (lobbyStream) lobbyStream.getTracks().forEach(t => t.enabled = false);
+        window._prejoinStream = lobbyStream;
+        lobbyStream = null;
+
+        lobby.classList.add("hidden");
+        document.getElementById("meetingWrapper").style.visibility = "visible";
+
+        initRoom({
+            startMicOn: lobbyMicOn,
+            startCamOn: lobbyCamOn,
+            previewStream: window._prejoinStream
+        });
+        window._prejoinStream = null;
+    };
+
+    // Avatar initials
+    const userName = "{{ request.user.name|default:'' }}";
+    if (userName) {
+        document.getElementById("lobbyAvatar").textContent =
+            userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+    }
+
+    startLobbyPreview();
+})();
+
+
+(function () {
+    const micOn = sessionStorage.getItem("prejoin_mic");
+    const camOn = sessionStorage.getItem("prejoin_cam");
+
+    // If no prejoin state → lobby will handle initRoom, skip here
+    if (micOn === null) return;
+
+    const startMicOn = micOn !== "0";
+    const startCamOn = camOn !== "0";
+    sessionStorage.removeItem("prejoin_mic");
+    sessionStorage.removeItem("prejoin_cam");
+    sessionStorage.removeItem("prejoin_stream");
+    sessionStorage.removeItem("join_display_name");
+
+    const previewStream = window._prejoinStream || null;
+    if (window._prejoinStream) window._prejoinStream = null;
+
+    document.addEventListener("DOMContentLoaded", function () {
+        initRoom({ startMicOn, startCamOn, previewStream });
+    });
+})();
+
+</script>
+
+</body>
+</html>

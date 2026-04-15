@@ -1,0 +1,192 @@
+/* FULL PAGE CENTER */
+.login-container {
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--white);
+}
+
+/* CENTER BOX */
+.section {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.login-box {
+    width: 380px;
+    background: transparent;
+    text-align: center;
+}
+
+/* HEADINGS */
+.heading {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--black);
+}
+
+.sub-heading {
+    font-size: 14px;
+    color: var(--light-black);
+    margin-bottom: 25px;
+}
+
+/* INPUT GROUP */
+.input-group {
+    text-align: left;
+    margin-bottom: 18px;
+}
+
+.input-group label {
+    font-size: 13px;
+    color: var(--light-black);
+    display: block;
+    margin-bottom: 6px;
+}
+
+/* INPUT FIELD */
+.input-group input {
+    width: 100%;
+    padding: 14px;
+    border: 2px solid var(--grey);
+    border-radius: 8px;
+    outline: none;
+    font-size: 14px;
+    transition: 0.2s;
+}
+
+/* ZOOM STYLE BLUE FOCUS */
+.input-group input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 2px rgba(45, 140, 255, 0.15);
+}
+
+/* BUTTON */
+.btn-wrapper {
+    margin-top: 10px;
+}
+
+.login-button {
+    width: 100%;
+    padding: 14px;
+    background: var(--blue);
+    border: none;
+    border-radius: 8px;
+    color: var(--white);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.login-button:hover {
+    background: var(--blue);
+}
+
+/* OPTIONS (REMEMBER + FORGOT) */
+.options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    margin-bottom: 15px;
+}
+
+.options a {
+    text-decoration: none;
+    color: var(--blue);
+}
+
+/* CHECKBOX */
+.custom-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+.custom-checkbox input {
+    accent-color: var(--blue);
+}
+
+/* SIGNUP TEXT */
+.signup-text {
+    margin-top: 18px;
+    font-size: 14px;
+}
+
+.signup-text a {
+    color: var(--blue);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+/* HR LINE */
+hr {
+    margin: 20px 0;
+    border: none;
+    height: 1px;
+    background: var(--light-black);
+}
+
+/* DISCLAIMER */
+.login-disclaimer {
+    font-size: 12px;
+    color: var(--dark-grey);
+    line-height: 1.5;
+}
+
+
+.othersigninreftxt{
+    font-size: 16px;
+    margin: 15px 0px;
+    color: var(--black);
+} 
+
+.othersignoptarea{
+    display: flex;
+    margin: auto;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+} 
+
+.othersignoptarea .othersigninbtn{
+    border: 1px solid var(--light-blue);
+    border-radius: 10px;
+    width: 90px;
+    height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+} 
+
+.othersignoptarea .othersigninbtn img{
+    display: block;
+    cursor:pointer
+
+}
+
+.othersignoptarea .othersigninbtn .googlelogo{
+    width: 30px;
+    height: 30px;
+}
+
+.othersignoptarea .othersigninbtn .facebooklogo{
+    width: 32px;
+    height: 32px;
+}
+
+.othersignoptarea .othersigninbtn .applelogo{
+    width: 25px;
+    height: 25px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 480px) {
+    .login-box {
+        width: 90%;
+    }
+}

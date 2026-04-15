@@ -1,0 +1,137 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="icon" type="image/x-icon" href="{% static 'meetings/images/meeting.png' %}">
+    {% block title %} {% endblock %}
+    <link rel="stylesheet" href="{% static 'meetings/css/common.css' %}">
+    <link rel="stylesheet" href="{% static 'meetings/css/base.css' %}">
+    {% block style %} {% endblock %}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+</head>
+
+<body>
+
+
+
+<div class="layout">
+
+    {% if messages %}
+    <div class="toast-container">
+        {% for message in messages %}
+        <div class="toast {{ message.tags }}">
+            <span>{{ message }}</span>
+            <button onclick="closeToast(this)">×</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- MINI SIDEBAR -->
+    <div class="mini-sidebar">
+
+        <div class="sidebar-menu">
+
+            <div class="menu-item active" onclick="window.location.href='{% url 'meetings:dashboard' %}'">
+                <img src="{% static 'meetings/images/home.png' %}">
+                <span>Home</span>
+            </div>
+
+            <div class="menu-item {% block nav_meetings %}{% endblock %}" 
+                id="sidebarMeetingsBtn"
+                onclick="window.location.href='{% url 'meetings:all_meetings' %}'">
+                <img src="{% static 'meetings/images/video.png' %}">
+                <span>Meetings</span>
+            </div>
+
+            <div class="menu-item">
+                <img src="{% static 'meetings/images/chat.png' %}">
+                <span>Team Chat</span>
+            </div>
+
+            <div class="menu-item">
+                <img src="{% static 'meetings/images/event.png' %}">
+                <span>Scheduler</span>
+            </div>
+
+            <div class="menu-item">
+                <img src="{% static 'meetings/images/hub.png' %}">
+                <span>Hub</span>
+            </div>
+
+        </div>
+
+        <!-- BOTTOM SETTINGS -->
+        <div class="sidebar-bottom">
+            <div class="menu-item">
+                <img src="{% static 'meetings/images/settings.png' %}">
+                <span>Settings</span>
+            </div>
+            {% if user.is_authenticated %}
+            <div class="menu-item" onclick="window.location.href='{% url 'accounts:user_logout' %}'">
+                <img src="{% static 'meetings/images/logout.png' %}">
+                <span>Logout</span>
+            </div>
+            {% else %}
+            <div class="menu-item" onclick="window.location.href='{% url 'accounts:login_page' %}'">
+                <img src="{% static 'meetings/images/login.png' %}">
+                <span>Login</span>
+            </div>
+            {% endif %}  
+        </div>
+
+        
+        
+    </div>
+
+    {% block content %}
+
+
+
+    {% endblock %}
+
+    
+
+</div>
+
+
+
+
+
+{% block script %}
+
+{% endblock %}
+
+<script>
+
+function closeToast(btn) {
+    const toast = btn.parentElement;
+    toast.style.opacity = "0";
+    toast.style.transform = "translateX(60px)";
+    setTimeout(() => toast.remove(), 300);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const toasts = document.querySelectorAll(".toast");
+
+    toasts.forEach((toast, index) => {
+        setTimeout(() => {
+            toast.style.opacity = "0";
+            toast.style.transform = "translateX(60px)";
+            setTimeout(() => toast.remove(), 300);
+        }, 5000 + index * 300);
+    });
+});
+
+</script>
+
+</body>
+
+
+</html>

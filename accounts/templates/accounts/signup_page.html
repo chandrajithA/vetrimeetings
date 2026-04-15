@@ -1,0 +1,103 @@
+{% extends 'meetings/base.html' %}
+{% load static %}
+{% load socialaccount %}
+
+{% block title %}
+    <title>Vetri Meetings - SignUp</title>
+{% endblock %}
+
+{% block style %}
+    <link rel="stylesheet" href="{% static 'accounts/css/login_page.css' %}">
+{% endblock %}
+
+
+{% block content %}
+
+<div class="main-content">
+    <div class="login-container">
+
+        {% if messages %}
+            <div class="toast-container">
+                {% for message in messages %}
+                <div class="toast {{ message.tags }}">
+                    <span>{{ message }}</span>
+                    <button onclick="closeToast(this)">×</button>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <!-- RIGHT SIDE (LOGIN BOX) -->
+        <div class="section">
+            <div class="login-box">
+                <p class="heading">Create Account</p>
+                <p class="sub-heading">Start your Meetings</p>
+
+                <form method="POST">
+                    {% csrf_token %}
+                    
+                    <input type="hidden" name="next" value="{{ next_url}}">
+
+                    <div class="input-group">
+                        <label>Full Name</label>
+                        <input type="text" name="name" value="{{ prefill.name }}" placeholder="Enter your full name" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Email Address</label>
+                        <input type="email" name="email" value="{{ prefill.email }}" placeholder="abcde@gmail.com" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Password</label>
+                        <input type="password" value="{{ prefill.password }}" name="password" placeholder="********" required autocomplete="off">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Confirm Password</label>
+                        <input type="password" value="{{ prefill.confirm_password }}" name="confirm_password" placeholder="********" required autocomplete="off">
+                    </div>
+
+                    <div class="btn-wrapper">
+                        <button class="login-button">Sign Up</button>
+                    </div>
+
+                    <p class="othersigninreftxt">Or continue with</p>
+                    <div class="othersignoptarea">
+                        <a href="{% provider_login_url 'google' process='login' next=request.GET.next %}">
+                            <div class="othersigninbtn">
+                                <img class="googlelogo" src="{% static 'accounts/images/google_logo.webp' %}" alt="google logo image">
+                            </div>
+                        </a>
+                        <a href="{% provider_login_url 'facebook' process='login' next=request.GET.next %}">
+                            <div class="othersigninbtn">
+                                <img class="facebooklogo" src="{% static 'accounts/images/facebook_logo.webp' %}" alt="facebook logo image">
+                            </div>
+                        </a>
+                        {% comment %} <a href="">
+                            <div class="othersigninbtn">
+                                <img class="applelogo" src="{% static 'images/apple_logo.png' %}" alt="apple logo image">
+                            </div>
+                        </a> {% endcomment %}
+                    </div>
+
+                    <p class="signup-text">
+                        Already have an account <a href="{% url 'accounts:login_page' %}">Login</a>
+                    </p>
+                    <hr>
+                    <p class="login-disclaimer">By continuing, you agree to Vetri Meetings' Terms of Services and Privacy Policy</p>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+
+{% endblock %}
+
+
+{% block script %}
+
+
+{% endblock %}

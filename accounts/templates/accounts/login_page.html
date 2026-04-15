@@ -1,0 +1,90 @@
+{% extends 'meetings/base.html' %}
+{% load static %}
+{% load socialaccount %}
+
+
+{% block title %}
+    <title>Vetri Meetings - Login</title>
+{% endblock %}
+
+{% block style %}
+    <link rel="stylesheet" href="{% static 'accounts/css/login_page.css' %}">
+{% endblock %}
+
+
+{% block content %}
+
+<div class="main-content">
+
+    <div class="login-container">
+
+        <div class="section">
+            <div class="login-box">
+                <p class="heading">Welcome Back</p>
+                <p class="sub-heading">Sign in to continue meeting</p>
+
+                <form method="POST">
+                    {% csrf_token %}
+
+                    <input type="hidden" name="next" value="{{ next_url}}">
+                    <div class="input-group">
+                        <label>Email Address</label>
+                        <input type="email" name="email" value="{{ prefill.email }}" placeholder="abcde@gmail.com" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Password</label>
+                        <input type="password" value="{{ prefill.password }}" name="password" placeholder="********" required autocomplete="off">
+                    </div>
+
+                    <div class="options">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" name="remember_me">
+                            <span class="checkmark"></span>
+                            <span class="checkmark-text">Remember Me<span>
+                        </label>
+                        <a href="{% url "accounts:password_reset" %}">Forget Password?</a>
+                    </div>
+
+                    <div class="btn-wrapper">
+                        <button class="login-button">Login</button>
+                    </div>
+                    <p class="othersigninreftxt">Or continue with</p>
+                    <div class="othersignoptarea">
+                        <a href="{% provider_login_url 'google' process='login' next=request.GET.next %}">
+                            <div class="othersigninbtn">
+                                <img class="googlelogo" src="{% static 'accounts/images/google_logo.webp' %}" alt="google logo image">
+                            </div>
+                        </a>
+                        <a href="{% provider_login_url 'facebook' process='login' next=request.GET.next %}">
+                            <div class="othersigninbtn">
+                                <img class="facebooklogo" src="{% static 'accounts/images/facebook_logo.webp' %}" alt="facebook logo image">
+                            </div>
+                        </a>
+                        {% comment %} <a href="">
+                            <div class="othersigninbtn">
+                                <img class="applelogo" src="{% static 'images/apple_logo.png' %}" alt="apple logo image">
+                            </div>
+                        </a> {% endcomment %}
+                    </div>
+
+                    <p class="signup-text">
+                        Don't have an account? <a href="{% url 'accounts:signup_page' %}">SignUp</a>
+                    </p>
+                    <hr>
+                    <p class="login-disclaimer">By continuing, you agree to Vetri Meetings' Terms of Services and Privacy Policy</p>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+
+{% block script %}
+
+
+{% endblock %}

@@ -1,0 +1,14 @@
+You're invited to: {{ meeting.title }}
+
+Host: {{ meeting.host.name }}
+{% if meeting.scheduled_start %}Date: {{ meeting.scheduled_start|date:"D, d M Y" }}
+{% if not meeting.is_all_day %}Time: {{ meeting.scheduled_start|date:"h:i A" }} – {{ meeting.scheduled_end|date:"h:i A" }}{% else %}All day{% endif %}
+{% endif %}{% if meeting.repeat != 'none' %}Repeats: {{ meeting.get_repeat_display }}{% if meeting.repeat_end_date %} until {{ meeting.repeat_end_date|date:"d M Y" }}{% endif %}
+{% endif %}
+
+Meeting ID : {{ meeting.meeting_id|slice:":4" }} {{ meeting.meeting_id|slice:"4:8" }} {{ meeting.meeting_id|slice:"8:" }}
+Passcode   : {{ meeting.passcode }}
+Join link  : {{ meeting.meeting_url }}
+
+---
+Vetri Meetings

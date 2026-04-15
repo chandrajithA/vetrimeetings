@@ -1,0 +1,96 @@
+.layout {
+    display: flex;
+}
+
+/* MAIN CONTENT */
+.main-content {
+    flex: 1;
+    padding: 20px;
+}
+.mini-sidebar {
+    width: 90px;
+    height: 100vh;
+    background: #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0;
+}
+
+/* MENU WRAPPER */
+.sidebar-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* MENU ITEM */
+.menu-item {
+    width: 70px;
+    height: 70px;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    position: relative;
+    transition: 0.2s;
+}
+
+/* ICON IMAGE */
+.menu-item img {
+    width: 22px;
+    height: 22px;
+    opacity: 0.7;
+}
+
+/* TEXT */
+.menu-item span {
+    font-size: 12px;
+    color: #334155;
+}
+
+/* ACTIVE */
+.menu-item.active {
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.menu-item.active img {
+    opacity: 1;
+}
+
+/* HOVER */
+.menu-item:hover {
+    background: #e2e8f0;
+}
+
+/* BADGE */
+.badge {
+    position: absolute;
+    bottom: 8px;
+    right: 6px;
+    font-size: 10px;
+    background: #dbeafe;
+    color: #2563eb;
+    padding: 2px 6px;
+    border-radius: 10px;
+}
+
+/* BOTTOM SETTINGS */
+.sidebar-bottom img {
+    width: 22px;
+    opacity: 0.7;
+    cursor: pointer;
+}
+
+.sidebar-bottom img:hover {
+    opacity: 1;
+}
+
+
+
+
