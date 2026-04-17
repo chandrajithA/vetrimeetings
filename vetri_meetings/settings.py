@@ -312,5 +312,5 @@ LIVEKIT_API_SECRET = env('LIVEKIT_API_SECRET')
 
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://692a-2406-7400-ca-49fd-441b-a556-9099-6a09.ngrok-free.app"
+    "https://entree-dispatch-espresso.ngrok-free.dev"
 ]

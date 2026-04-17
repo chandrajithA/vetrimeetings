@@ -234,6 +234,7 @@
     const ROOM_NAME   = "{{ room_name }}";
     const IS_HOST     = {{ is_host|yesno:"true,false" }};
     const MEETING_URL = "{{ meeting_url }}";
+    const MEETING_CHAT_ID  = {{ chat_id|default:"null" }}; 
 
     const ICONS = {
         micOn:  "{% static 'meetings/images/audio-on.png' %}",
@@ -245,6 +246,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 <script src="{% static 'meetings/js/webrtc.js' %}"></script>
+
+<script>
+    window.MEETING_CHAT_ID = MEETING_CHAT_ID;
+</script>
 
 <script>
 /* ══════════════════════════════════════════════════════
@@ -342,176 +347,187 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
 }
 
 (function () {
-    const hasPrejoin = sessionStorage.getItem("prejoin_mic") !== null;
-    if (hasPrejoin) return;
+    /* ── Read and IMMEDIATELY delete prejoin keys ── */
+    const micVal = sessionStorage.getItem("prejoin_mic");
+    const camVal = sessionStorage.getItem("prejoin_cam");
 
-    let lobbyMicOn    = true;
-    let lobbyCamOn    = true;
-    let lobbyStream   = null;
-    let lobbyPermDenied = false;
-
-    const lobby = document.getElementById("prejoinLobby");
-    lobby.classList.remove("hidden");
-    document.getElementById("meetingWrapper").style.visibility = "hidden";
-
-    /* ── same helper as dashboard ── */
-    function syncBtn(btnId, imgId, labelId, isOn, onLabel, offLabel) {
-        const btn = document.getElementById(btnId);
-        const img = document.getElementById(imgId);
-        const lbl = document.getElementById(labelId);
-        img.src = isOn ? img.dataset.on : img.dataset.off;
-        lbl.textContent = isOn ? onLabel : offLabel;
-        btn.classList.toggle("av-on",  isOn);
-        btn.classList.toggle("av-off", !isOn);
-    }
-
-    window.lobbyOpenPermSettings = function(e) {
-        e.preventDefault();
-        alert("To allow camera/microphone:\n1. Click the lock icon in the address bar.\n2. Set Camera and Microphone to Allow.\n3. Refresh the page.");
-    };
-
-    async function startLobbyPreview() {
-        const videoEl      = document.getElementById("lobbyVideo");
-        const camOffEl     = document.getElementById("lobbyCamOff");
-        const permDeniedEl = document.getElementById("lobbyPermDenied");
-
-        camOffEl.classList.add("hidden");
-        permDeniedEl.classList.add("hidden");
-
-        try {
-            lobbyStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-                audio: true
-            });
-            lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
-            lobbyStream.getVideoTracks().forEach(t => t.enabled = lobbyCamOn);
-
-            if (lobbyCamOn && lobbyStream.getVideoTracks().length > 0) {
-                videoEl.srcObject = lobbyStream;
-                videoEl.style.transform = "scaleX(-1)";
-                camOffEl.classList.add("hidden");
-            } else {
-                camOffEl.classList.remove("hidden");
-            }
-        } catch (err) {
-            console.warn("Lobby preview error:", err.name);
-            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-                permDeniedEl.classList.remove("hidden");
-                lobbyPermDenied = true;
-                lobbyMicOn = false; lobbyCamOn = false;
-                document.getElementById("lobbyMicBtn").classList.add("pj-disabled");
-                document.getElementById("lobbyCamBtn").classList.add("pj-disabled");
-            } else {
-                camOffEl.classList.remove("hidden");
-            }
-        }
-        syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
-        syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
-    }
-
-    window.toggleLobbyMic = function () {
-        if (lobbyPermDenied) return;
-        lobbyMicOn = !lobbyMicOn;
-        if (lobbyStream) lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
-        syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
-    };
-
-    window.toggleLobbyCam = async function () {
-        if (lobbyPermDenied) return;
-        lobbyCamOn = !lobbyCamOn;
-        syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
-
-        const videoEl  = document.getElementById("lobbyVideo");
-        const camOffEl = document.getElementById("lobbyCamOff");
-
-        if (!lobbyCamOn) {
-            if (lobbyStream) lobbyStream.getVideoTracks().forEach(t => t.enabled = false);
-            videoEl.srcObject = null;
-            camOffEl.classList.remove("hidden");
-        } else {
-            camOffEl.classList.add("hidden");
-            if (lobbyStream && lobbyStream.getVideoTracks().length > 0) {
-                lobbyStream.getVideoTracks().forEach(t => t.enabled = true);
-                videoEl.srcObject = lobbyStream;
-                videoEl.style.transform = "scaleX(-1)";
-            } else {
-                try {
-                    const vs = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-                        audio: false
-                    });
-                    if (lobbyStream) lobbyStream.addTrack(vs.getVideoTracks()[0]);
-                    else lobbyStream = vs;
-                    videoEl.srcObject = lobbyStream;
-                    videoEl.style.transform = "scaleX(-1)";
-                } catch (e) {
-                    lobbyCamOn = false;
-                    camOffEl.classList.remove("hidden");
-                    syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", false, "Cam On", "Cam Off");
-                }
-            }
-        }
-    };
-
-    window.lobbyJoin = function () {
-        const name = document.getElementById("lobbyName").value.trim();
-        if (!name) { document.getElementById("lobbyName").focus(); return; }
-
-        const btn     = document.getElementById("lobbyJoinBtn");
-        const label   = document.getElementById("lobbyJoinLabel");
-        const spinner = document.getElementById("lobbyJoinSpinner");
-        btn.disabled = true; label.textContent = "Joining…"; spinner.classList.remove("hidden");
-
-        sessionStorage.setItem("join_display_name", name);
-        sessionStorage.setItem("prejoin_mic", lobbyMicOn ? "1" : "0");
-        sessionStorage.setItem("prejoin_cam", lobbyCamOn ? "1" : "0");
-
-        document.getElementById("lobbyVideo").srcObject = null;
-        if (lobbyStream) lobbyStream.getTracks().forEach(t => t.enabled = false);
-        window._prejoinStream = lobbyStream;
-        lobbyStream = null;
-
-        lobby.classList.add("hidden");
-        document.getElementById("meetingWrapper").style.visibility = "visible";
-
-        initRoom({
-            startMicOn: lobbyMicOn,
-            startCamOn: lobbyCamOn,
-            previewStream: window._prejoinStream
-        });
-        window._prejoinStream = null;
-    };
-
-    // Avatar initials
-    const userName = "{{ request.user.name|default:'' }}";
-    if (userName) {
-        document.getElementById("lobbyAvatar").textContent =
-            userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-    }
-
-    startLobbyPreview();
-})();
-
-
-(function () {
-    const micOn = sessionStorage.getItem("prejoin_mic");
-    const camOn = sessionStorage.getItem("prejoin_cam");
-
-    // If no prejoin state → lobby will handle initRoom, skip here
-    if (micOn === null) return;
-
-    const startMicOn = micOn !== "0";
-    const startCamOn = camOn !== "0";
+    // Always remove keys right away. If the page reloads for any reason,
+    // the values are gone and the lobby will be shown fresh.
     sessionStorage.removeItem("prejoin_mic");
     sessionStorage.removeItem("prejoin_cam");
     sessionStorage.removeItem("prejoin_stream");
-    sessionStorage.removeItem("join_display_name");
+
+    const displayName = sessionStorage.getItem("join_display_name") || "";
+    // Don't remove join_display_name yet — initRoom needs it; webrtc.js removes it.
+
+    const hasPrejoin = micVal !== null;
+
+    /* ══════════════════════════════════════════════════════
+       LOBBY — always shown when no prejoin state exists
+       (direct link, re-entry after leave, hard refresh)
+       ══════════════════════════════════════════════════════ */
+    if (!hasPrejoin) {
+        let lobbyMicOn     = true;
+        let lobbyCamOn     = true;
+        let lobbyStream    = null;
+        let lobbyPermDenied = false;
+
+        const lobby = document.getElementById("prejoinLobby");
+        lobby.classList.remove("hidden");
+        document.getElementById("meetingWrapper").style.visibility = "hidden";
+
+        function syncBtn(btnId, imgId, labelId, isOn, onLabel, offLabel) {
+            const btn = document.getElementById(btnId);
+            const img = document.getElementById(imgId);
+            const lbl = document.getElementById(labelId);
+            img.src = isOn ? img.dataset.on : img.dataset.off;
+            lbl.textContent = isOn ? onLabel : offLabel;
+            btn.classList.toggle("av-on",  isOn);
+            btn.classList.toggle("av-off", !isOn);
+        }
+
+        window.lobbyOpenPermSettings = function(e) {
+            e.preventDefault();
+            alert("To allow camera/microphone:\n1. Click the lock icon in the address bar.\n2. Set Camera and Microphone to Allow.\n3. Refresh the page.");
+        };
+
+        async function startLobbyPreview() {
+            const videoEl      = document.getElementById("lobbyVideo");
+            const camOffEl     = document.getElementById("lobbyCamOff");
+            const permDeniedEl = document.getElementById("lobbyPermDenied");
+            camOffEl.classList.add("hidden");
+            permDeniedEl.classList.add("hidden");
+            try {
+                lobbyStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: true
+                });
+                lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
+                lobbyStream.getVideoTracks().forEach(t => t.enabled = lobbyCamOn);
+                if (lobbyCamOn && lobbyStream.getVideoTracks().length > 0) {
+                    videoEl.srcObject = lobbyStream;
+                    videoEl.style.transform = "scaleX(-1)";
+                    camOffEl.classList.add("hidden");
+                } else {
+                    camOffEl.classList.remove("hidden");
+                }
+            } catch (err) {
+                console.warn("Lobby preview error:", err.name);
+                if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                    permDeniedEl.classList.remove("hidden");
+                    lobbyPermDenied = true;
+                    lobbyMicOn = false; lobbyCamOn = false;
+                    document.getElementById("lobbyMicBtn").classList.add("pj-disabled");
+                    document.getElementById("lobbyCamBtn").classList.add("pj-disabled");
+                } else {
+                    camOffEl.classList.remove("hidden");
+                }
+            }
+            syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
+            syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
+        }
+
+        window.toggleLobbyMic = function () {
+            if (lobbyPermDenied) return;
+            lobbyMicOn = !lobbyMicOn;
+            if (lobbyStream) lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
+            syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
+        };
+
+        window.toggleLobbyCam = async function () {
+            if (lobbyPermDenied) return;
+            lobbyCamOn = !lobbyCamOn;
+            syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
+            const videoEl  = document.getElementById("lobbyVideo");
+            const camOffEl = document.getElementById("lobbyCamOff");
+            if (!lobbyCamOn) {
+                if (lobbyStream) lobbyStream.getVideoTracks().forEach(t => t.enabled = false);
+                videoEl.srcObject = null;
+                camOffEl.classList.remove("hidden");
+            } else {
+                camOffEl.classList.add("hidden");
+                if (lobbyStream && lobbyStream.getVideoTracks().length > 0) {
+                    lobbyStream.getVideoTracks().forEach(t => t.enabled = true);
+                    videoEl.srcObject = lobbyStream;
+                    videoEl.style.transform = "scaleX(-1)";
+                } else {
+                    try {
+                        const vs = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                            audio: false
+                        });
+                        if (lobbyStream) lobbyStream.addTrack(vs.getVideoTracks()[0]);
+                        else lobbyStream = vs;
+                        videoEl.srcObject = lobbyStream;
+                        videoEl.style.transform = "scaleX(-1)";
+                    } catch (e) {
+                        lobbyCamOn = false;
+                        camOffEl.classList.remove("hidden");
+                        syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", false, "Cam On", "Cam Off");
+                    }
+                }
+            }
+        };
+
+        window.lobbyJoin = function () {
+            const nameInput = document.getElementById("lobbyName");
+            const name = nameInput.value.trim();
+            if (!name) { nameInput.focus(); return; }
+
+            const btn     = document.getElementById("lobbyJoinBtn");
+            const label   = document.getElementById("lobbyJoinLabel");
+            const spinner = document.getElementById("lobbyJoinSpinner");
+            btn.disabled = true; label.textContent = "Joining…"; spinner.classList.remove("hidden");
+
+            // Store display name for webrtc.js to pass to token endpoint
+            sessionStorage.setItem("join_display_name", name);
+
+            // Stop preview tracks — initRoom will use them via window._prejoinStream
+            document.getElementById("lobbyVideo").srcObject = null;
+            if (lobbyStream) lobbyStream.getTracks().forEach(t => t.enabled = false);
+            window._prejoinStream = lobbyStream;
+            lobbyStream = null;
+
+            lobby.classList.add("hidden");
+            document.getElementById("meetingWrapper").style.visibility = "visible";
+
+            initRoom({
+                startMicOn:    lobbyMicOn,
+                startCamOn:    lobbyCamOn,
+                previewStream: window._prejoinStream,
+                displayName:   name,
+            });
+            window._prejoinStream = null;
+        };
+
+        // Avatar initials from DB name (cosmetic only)
+        const userName = "{{ request.user.name|default:'' }}";
+        if (userName) {
+            document.getElementById("lobbyAvatar").textContent =
+                userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+        }
+
+        startLobbyPreview();
+        return;   // ← stop here; don't run the prejoin-state branch
+    }
+
+    /* ══════════════════════════════════════════════════════
+       PREJOIN STATE PATH — came from dashboard/join preview
+       Keys were already deleted above, so this runs at most once.
+       ══════════════════════════════════════════════════════ */
+    const startMicOn = micVal !== "0";
+    const startCamOn = camVal !== "0";
 
     const previewStream = window._prejoinStream || null;
     if (window._prejoinStream) window._prejoinStream = null;
 
     document.addEventListener("DOMContentLoaded", function () {
-        initRoom({ startMicOn, startCamOn, previewStream });
+        initRoom({
+            startMicOn,
+            startCamOn,
+            previewStream,
+            displayName,
+        });
     });
 })();
 

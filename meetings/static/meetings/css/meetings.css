@@ -2,45 +2,7 @@
    MEETINGS PAGE — Full redesign matching dashboard card style
    ═══════════════════════════════════════════════════════════════ */
 
-:root {
-  --bg:          #f5f4f0;
-  --surface:     #ffffff;
-  --surface-2:   #f9f8f5;
-  --border:      #e8e4dc;
-  --border-soft: #f0ede6;
 
-  --text-primary:   #1a1714;
-  --text-secondary: #6b6560;
-  --text-muted:     #a09890;
-
-  --accent:        #2b5ce6;
-  --accent-light:  #eef2fd;
-  --accent-border: #c5d2f8;
-
-  --host:        #d4580a;
-  --host-light:  #fff3ea;
-  --host-border: #f5c9a0;
-
-  --green:        #1a8a4a;
-  --green-light:  #eaf6ef;
-  --green-border: #a3d9b8;
-
-  --violet:        #6b3fd4;
-  --violet-light:  #f2eefe;
-  --violet-border: #c9b8f5;
-
-  --red:        #c0392b;
-  --red-light:  #fdf0ee;
-  --red-border: #f0b8b2;
-
-  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  --shadow-md: 0 4px 16px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.04);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.06);
-
-  --radius:    12px;
-  --radius-sm: 8px;
-  --radius-xs: 5px;
-}
 
 /* ══════════════════════════════════════
    PAGE LAYOUT

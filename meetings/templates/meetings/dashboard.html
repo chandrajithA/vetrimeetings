@@ -40,10 +40,10 @@
                 <p>Schedule</p>
             </a>
 
-            <a href="" class="action-box">
+            {% comment %} <a href="" class="action-box">
                 <img src="{% static 'meetings/images/share.png' %}" alt="">
                 <p>Share screen</p>
-            </a>
+            </a> {% endcomment %}
 
             <a href="" class="action-box">
                 <img src="{% static 'meetings/images/notes.png' %}" alt="">
@@ -1123,7 +1123,6 @@ async function submitEdit() {
 
         allMeetingsCache = null;
         loadMeetingsForDate();
-        if (document.getElementById('meetingsPanelOverlay').classList.contains('open')) loadAllMeetings();
 
         setTimeout(closeEditModal, 1500);
     } catch(err) {
@@ -1145,14 +1144,15 @@ function openDeleteConfirm(id, title) {
 }
 
 function closeDeleteConfirm() {
-    document.getElementById('deleteConfirmOverlay').classList.remove('open');
+    const overlay = document.getElementById('deleteConfirmOverlay');
+    if (overlay) overlay.classList.remove('open');
     deleteTargetId = null;
 }
 
 async function confirmDelete() {
     if (!deleteTargetId) return;
     const btn = document.getElementById('confirmDeleteBtn');
-    btn.disabled = true; btn.textContent = 'Deleting…';
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
 
     try {
         const res = await fetch(`/meeting/delete/${deleteTargetId}/`, {
@@ -1165,11 +1165,13 @@ async function confirmDelete() {
         closeDeleteConfirm();
         allMeetingsCache = null;
         loadMeetingsForDate();
-        if (document.getElementById('meetingsPanelOverlay').classList.contains('open')) loadAllMeetings();
+        const panel = document.getElementById('meetingsPanelOverlay');
+        if (panel && panel.classList.contains('open')) loadAllMeetings();
     } catch(err) {
         alert('Error: ' + err.message);
     } finally {
-        btn.disabled = false; btn.textContent = 'Delete';
+        const btn = document.getElementById('confirmDeleteBtn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
     }
 }
 
@@ -1686,8 +1688,10 @@ async function submitSchedule() {
         if (!res.ok) throw new Error(data.error || 'Failed to schedule');
         sucEl.innerHTML = `✅ Meeting scheduled!<br><strong>ID:</strong> ${data.meeting_id.match(/.{1,4}/g).join(' ')} &nbsp; <strong>Passcode:</strong> ${data.passcode}<br><small>Invite emails sent to ${schInvitees.length} invitee(s).</small>`;
         sucEl.classList.remove('hidden');
+        
         schInvitees = []; document.getElementById('schInviteeList').innerHTML = '';
         loadMeetingsForDate();
+        setTimeout(() => { closeScheduleModal(); }, 2000);
     } catch(err) {
         errEl.textContent = err.message; errEl.classList.remove('hidden');
     } finally {

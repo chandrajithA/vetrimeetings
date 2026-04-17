@@ -34,7 +34,7 @@ class Meeting(models.Model):
     meeting_id  = models.CharField(max_length=12, unique=True, blank=True)
     passcode     = models.CharField(max_length=8, blank=True) 
     meeting_url = models.URLField(max_length=500, blank=True, default="")
-    is_active   = models.BooleanField(default=True)
+    is_active   = models.BooleanField(default=False)
     # ── Scheduling ──
     scheduled_start = models.DateTimeField(blank=True, null=True)
     scheduled_end   = models.DateTimeField(blank=True, null=True)
@@ -107,6 +107,39 @@ class MeetingChatMessage(models.Model):
     text      = models.TextField()
     sent_at   = models.DateTimeField(auto_now_add=True)
     deleted_by = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='deleted_messages', blank=True)
+
+    def __str__(self):
+        return f"{self.sender} @ {self.sent_at:%H:%M}: {self.text[:40]}"
+    
+    
+class DirectChat(models.Model):
+    """One-on-one direct message thread between two users."""
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def get_other_user(self, user):
+        p = self.participations.exclude(user=user).select_related('user').first()
+        return p.user if p else None
+
+    def __str__(self):
+        names = [p.user.name for p in self.participations.select_related('user').all()]
+        return f"DM: {' ↔ '.join(names)}"
+
+
+class DirectChatParticipant(models.Model):
+    chat      = models.ForeignKey(DirectChat, on_delete=models.CASCADE, related_name='participations')
+    user      = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('chat', 'user')
+
+
+class DirectChatMessage(models.Model):
+    chat       = models.ForeignKey(DirectChat, on_delete=models.CASCADE, related_name='messages')
+    sender     = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    text       = models.TextField()
+    sent_at    = models.DateTimeField(auto_now_add=True)
+    is_deleted = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.sender} @ {self.sent_at:%H:%M}: {self.text[:40]}"

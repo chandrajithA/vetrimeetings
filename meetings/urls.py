@@ -23,11 +23,25 @@ urlpatterns = [
     path('meeting/edit/<int:meeting_id>/', edit_meeting, name='edit_meeting'),
     path('meeting/delete/<int:meeting_id>/', delete_meeting, name='delete_meeting'),
     
-    path('chat/', chat_list, name='chat_list'),
-    path('chat/<int:chat_id>/messages/', chat_messages, name='chat_messages'),
-    path('chat/<int:chat_id>/send/', chat_send, name='chat_send'),
-    path('chat/<int:chat_id>/delete/', chat_delete_for_me, name='chat_delete'),
-    path('chat/<int:chat_id>/add/', chat_add_member, name='chat_add_member'),
-    path('chat/<int:chat_id>/remove/<int:user_id>/', chat_remove_member, name='chat_remove_member'),
+    # Chat page
+    path('chat/', chat_page, name='chat_page'),
+
+    # Meeting group-chat endpoints
+    path('meeting/chat/list/', chat_list, name='chat_list'),
+    path('meeting/chat/<int:chat_id>/messages/', chat_messages, name='chat_messages'),
+    path('meeting/chat/<int:chat_id>/send/', chat_send, name='chat_send'),
+    path('meeting/chat/<int:chat_id>/poll/', chat_poll, name='chat_poll'),   
+    path('meeting/chat/<int:chat_id>/delete/', chat_delete_for_me, name='chat_delete'),
+    path('meeting/chat/<int:chat_id>/add-member/', chat_add_member, name='chat_add_member'),
+    path('meeting/chat/<int:chat_id>/remove-member/<int:user_id>/', chat_remove_member, name='chat_remove_member'),
+
+    # Direct messages
+    path('meeting/dm/', dm_list, name='dm_list'),        
+    path('meeting/dm/get-or-create/', dm_get_or_create, name='dm_get_or_create'),
+    path('meeting/dm/<int:dm_id>/', dm_messages, name='dm_messages'),     
+    path('meeting/dm/<int:dm_id>/send/', dm_send, name='dm_send'),       
+
+    # User search
+    path('users/search/', search_users, name='search_users'),
 
 ]

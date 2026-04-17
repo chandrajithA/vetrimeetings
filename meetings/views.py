@@ -12,9 +12,11 @@ from .models import Meeting, MeetingRecording
 import json
 from livekit.api import UpdateRoomMetadataRequest
 from .emails import send_meeting_invite
-from .models import Meeting, MeetingInvitee, MeetingChat, MeetingChatMember, MeetingChatMessage
+from .models import *
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
+import threading
+
 
 
 ######################################################
@@ -40,6 +42,13 @@ def dashboard(request):
     return render(request, "meetings/dashboard.html")
 
 
+def _ensure_meeting_chat(meeting, user):
+    chat, _ = MeetingChat.objects.get_or_create(meeting=meeting)
+    MeetingChatMember.objects.get_or_create(chat=chat, user=user)
+    return chat
+
+
+
 ######################################################
 # TOKEN
 ######################################################
@@ -57,12 +66,15 @@ def get_token(request, room_name):
         meeting.meeting_url = _build_meeting_url(request, room_name)
         meeting.save(update_fields=["meeting_url"])
 
+    # Allow the lobby preview to override the display name for this session
+    display_name = request.GET.get("display_name", "").strip() or request.user.name
+
     token = AccessToken(
         api_key=settings.LIVEKIT_API_KEY,
         api_secret=settings.LIVEKIT_API_SECRET,
     )
     token.with_identity(str(request.user.id))
-    token.with_name(request.user.name)
+    token.with_name(display_name)          # ← uses lobby name if provided
     token.with_grants(VideoGrants(
         room_join=True,
         room=room_name,
@@ -75,7 +87,7 @@ def get_token(request, room_name):
         "token": token.to_jwt(),
         "livekit_url": settings.LIVEKIT_URL,
         "room_name": room_name,
-        "user_name": request.user.name,
+        "user_name": display_name,
         "is_host": meeting.host == request.user,
     })
 
@@ -87,28 +99,32 @@ def get_token(request, room_name):
 @login_required
 def room(request, room_name):
     meeting = Meeting.objects.filter(room_name=room_name).first()
-    
+
     if not meeting:
         messages.error(request, "Error in joining meeting. Meeting not found.")
         return redirect('meetings:dashboard')
-    
+
     if not meeting.meeting_url:
         meeting.meeting_url = _build_meeting_url(request, room_name)
         meeting.save(update_fields=["meeting_url"])
-        
+
     if meeting.host != request.user and not meeting.is_active:
         messages.error(request, "This meeting has ended.")
         return redirect('meetings:dashboard')
-    
+
     if meeting.host == request.user and not meeting.is_active:
         meeting.is_active = True
         meeting.save(update_fields=["is_active"])
 
+    # Ensure the meeting has a persistent chat and this user is a member
+    chat = _ensure_meeting_chat(meeting, request.user)
+
     return render(request, "meetings/room.html", {
-        "meeting": meeting,
-        "room_name": room_name,
-        "is_host": meeting.host == request.user,
+        "meeting":     meeting,
+        "room_name":   room_name,
+        "is_host":     meeting.host == request.user,
         "meeting_url": meeting.meeting_url,
+        "chat_id":     chat.id,
     })
     
     
@@ -131,6 +147,9 @@ def create_meeting(request):
     )
     meeting.meeting_url = _build_meeting_url(request, room_name)
     meeting.save(update_fields=["meeting_url"])
+    
+    # Create persistent chat for instant meetings too
+    _ensure_meeting_chat(meeting, request.user)
 
     redirect_url = f"/room/{room_name}/"
 
@@ -189,35 +208,68 @@ def end_meeting(request, room_name):
     if not meeting:
         return JsonResponse({"error": "Meeting not found"}, status=404)
 
-    async def _end():
+    # Mark inactive immediately
+    meeting.is_active = False
+    meeting.save(update_fields=["is_active"])
+
+    async def _end_livekit():
+        import asyncio as _asyncio
         async with LiveKitAPI(
             url=settings.LIVEKIT_URL,
             api_key=settings.LIVEKIT_API_KEY,
             api_secret=settings.LIVEKIT_API_SECRET,
         ) as lk:
-            # Set metadata first — fires RoomMetadataChanged on all non-host clients
             try:
-                from livekit.api import UpdateRoomMetadataRequest
                 await lk.room.update_room_metadata(
                     UpdateRoomMetadataRequest(room=room_name, metadata="ended")
                 )
             except Exception as e:
-                print(f"update_room_metadata failed: {e}")
+                pass  # silently ignore — clients already got the signal
 
-            # Small wait for metadata to propagate to clients, then delete
-            import asyncio as _a
-            await _a.sleep(0.5)   # 0.5s only — just enough for metadata delivery
+            await _asyncio.sleep(0.5)
 
             try:
                 await lk.room.delete_room(DeleteRoomRequest(room=room_name))
-            except Exception as e:
-                print(f"delete_room failed: {e}")
+            except Exception:
+                pass  # room may already be gone
 
-    asyncio.run(_end())
+    def _run_in_thread():
+        """
+        Run async LiveKit calls in a brand-new event loop on a worker thread.
+        Completely isolated from the ASGI event loop, so no CancelledError leaks.
+        We also suppress the asyncio CancelledError log that asgiref emits when
+        the parent request is torn down before the thread finishes.
+        """
+        import logging
+        import asyncio as _asyncio
 
-    if meeting:
-        meeting.is_active = False
-        meeting.save()
+        # Silence the asgiref 'CancelledError exception in shielded future' noise
+        logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+        logging.getLogger("asgiref").setLevel(logging.CRITICAL)
+
+        loop = _asyncio.new_event_loop()
+        _asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_end_livekit())
+        except Exception:
+            pass  # swallow everything — meeting is already marked inactive in DB
+        finally:
+            try:
+                # Cancel any lingering tasks cleanly before closing the loop
+                pending = _asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(
+                        _asyncio.gather(*pending, return_exceptions=True)
+                    )
+            except Exception:
+                pass
+            loop.close()
+
+    t = threading.Thread(target=_run_in_thread, daemon=True)
+    t.start()
+    t.join(timeout=6)
 
     return JsonResponse({"status": "ended"})
 
@@ -714,3 +766,202 @@ def delete_meeting(request, meeting_id):
     meeting = get_object_or_404(Meeting, id=meeting_id, host=request.user)
     meeting.delete()
     return JsonResponse({"status": "deleted"})
+
+
+# ── CHAT POLL (real-time new messages since a timestamp) ─────────────────────
+
+@login_required
+def chat_poll(request, chat_id):
+    """GET /meeting/chat/<id>/poll/?since=<iso>  — returns only NEW messages."""
+    chat   = get_object_or_404(MeetingChat, id=chat_id)
+    member = MeetingChatMember.objects.filter(
+        chat=chat, user=request.user, is_removed=False
+    ).first()
+    if not member:
+        return JsonResponse({"error": "Not a member"}, status=403)
+
+    since = request.GET.get("since")
+    qs    = chat.messages.exclude(deleted_by=request.user)
+    if since:
+        try:
+            from django.utils.dateparse import parse_datetime as _pd
+            dt = _pd(since)
+            if dt:
+                qs = qs.filter(sent_at__gt=dt)
+        except Exception:
+            pass
+
+    msgs = qs.order_by("sent_at").values(
+        "id", "sender__name", "sender_id", "text", "sent_at"
+    )
+    return JsonResponse({
+        "messages": [
+            {
+                "id":      m["id"],
+                "sender":  m["sender__name"],
+                "is_me":   m["sender_id"] == request.user.id,
+                "text":    m["text"],
+                "sent_at": m["sent_at"].isoformat(),
+            }
+            for m in msgs
+        ]
+    })
+
+
+# ── CHAT PAGE ─────────────────────────────────────────────────────────────────
+
+@login_required
+def chat_page(request):
+    return render(request, "meetings/chat.html")
+
+
+# ── DIRECT MESSAGE VIEWS ──────────────────────────────────────────────────────
+
+@login_required
+def dm_list(request):
+    """GET /meeting/dm/  — list all DM conversations for the current user."""
+    participations = DirectChatParticipant.objects.filter(
+        user=request.user
+    ).select_related('chat')
+
+    result = []
+    for p in participations:
+        dm    = p.chat
+        other = dm.participations.exclude(user=request.user).select_related('user').first()
+        if not other:
+            continue
+        last = dm.messages.filter(is_deleted=False).order_by('-sent_at').first()
+        result.append({
+            "dm_id":      dm.id,
+            "other_user": {
+                "id":    other.user.id,
+                "name":  other.user.name,
+                "email": other.user.email,
+            },
+            "last_message": last.text      if last else "",
+            "last_at":      last.sent_at.isoformat() if last else "",
+        })
+
+    # Sort most recent first
+    result.sort(key=lambda x: x["last_at"] or "", reverse=True)
+    return JsonResponse({"dms": result})
+
+
+@login_required
+@require_POST
+def dm_get_or_create(request):
+    """POST /meeting/dm/get-or-create/  {user_id}  — get or create a DM thread."""
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    user_id = body.get("user_id")
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    try:
+        other_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+
+    if other_user == request.user:
+        return JsonResponse({"error": "Cannot DM yourself"}, status=400)
+
+    # Find existing DM between these two users
+    my_dm_ids    = DirectChatParticipant.objects.filter(user=request.user).values_list('chat_id', flat=True)
+    other_dm_ids = DirectChatParticipant.objects.filter(user=other_user).values_list('chat_id', flat=True)
+    shared       = set(my_dm_ids) & set(other_dm_ids)
+
+    if shared:
+        dm_id = list(shared)[0]
+        return JsonResponse({"dm_id": dm_id, "created": False})
+
+    dm = DirectChat.objects.create()
+    DirectChatParticipant.objects.create(chat=dm, user=request.user)
+    DirectChatParticipant.objects.create(chat=dm, user=other_user)
+    return JsonResponse({"dm_id": dm.id, "created": True})
+
+
+@login_required
+def dm_messages(request, dm_id):
+    """GET /meeting/dm/<id>/  — messages (supports ?since= for polling)."""
+    dm = get_object_or_404(DirectChat, id=dm_id)
+    if not dm.participations.filter(user=request.user).exists():
+        return JsonResponse({"error": "Not a participant"}, status=403)
+
+    since = request.GET.get("since")
+    qs    = dm.messages.filter(is_deleted=False)
+    if since:
+        try:
+            from django.utils.dateparse import parse_datetime as _pd
+            dt = _pd(since)
+            if dt:
+                qs = qs.filter(sent_at__gt=dt)
+        except Exception:
+            pass
+
+    msgs  = qs.order_by("sent_at").select_related("sender")
+    other = dm.participations.exclude(user=request.user).select_related("user").first()
+
+    return JsonResponse({
+        "messages": [
+            {
+                "id":      m.id,
+                "sender":  m.sender.name,
+                "is_me":   m.sender_id == request.user.id,
+                "text":    m.text,
+                "sent_at": m.sent_at.isoformat(),
+            }
+            for m in msgs
+        ],
+        "other_user": {
+            "id":   other.user.id,
+            "name": other.user.name,
+        } if other else None,
+    })
+
+
+@login_required
+@require_POST
+def dm_send(request, dm_id):
+    """POST /meeting/dm/<id>/send/  {text}  — send a DM."""
+    dm = get_object_or_404(DirectChat, id=dm_id)
+    if not dm.participations.filter(user=request.user).exists():
+        return JsonResponse({"error": "Not a participant"}, status=403)
+
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    text = body.get("text", "").strip()
+    if not text:
+        return JsonResponse({"error": "Empty message"}, status=400)
+
+    msg = DirectChatMessage.objects.create(chat=dm, sender=request.user, text=text)
+    return JsonResponse({"id": msg.id, "sent_at": msg.sent_at.isoformat()})
+
+
+# ── USER SEARCH (for starting DMs) ───────────────────────────────────────────
+
+@login_required
+def search_users(request):
+    """GET /meeting/users/search/?q=<query>"""
+    q = request.GET.get("q", "").strip()
+    if len(q) < 2:
+        return JsonResponse({"users": []})
+
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+    User = get_user_model()
+
+    users = User.objects.filter(
+        Q(name__icontains=q) | Q(email__icontains=q)
+    ).exclude(pk=request.user.pk)[:10]
+
+    return JsonResponse({
+        "users": [
+            {"id": u.id, "name": u.name, "email": u.email}
+            for u in users
+        ]
+    })

@@ -1,0 +1,606 @@
+{% extends 'meetings/base.html' %}
+{% load static %}
+
+{% block title %}<title>Chat — Vetri Meetings</title>{% endblock %}
+
+{% block style %}
+<link rel="stylesheet" href="{% static 'meetings/css/chat.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="vt-chat-app" id="vtChatApp">
+
+    <!-- ══ LEFT SIDEBAR ══════════════════════════════════════════ -->
+    <div class="vt-sidebar" id="vtSidebar">
+
+        <div class="vt-sidebar-header">
+            <h2 class="vt-sidebar-title">Chat</h2>
+            <button class="vt-new-btn" onclick="openNewDmModal()" title="New direct message">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="vt-search-wrap">
+            <svg class="vt-search-icon" width="13" height="13" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input class="vt-search" id="vtSearchInput" type="text"
+                   placeholder="Search conversations…"
+                   oninput="filterConvList(this.value)">
+        </div>
+
+        <div class="vt-tabs">
+            <button class="vt-tab active" id="tab-group"
+                    onclick="switchTab('group',this)">Group</button>
+            <button class="vt-tab" id="tab-dm"
+                    onclick="switchTab('dm',this)">Direct</button>
+        </div>
+
+        <div class="vt-conv-list" id="vtConvList">
+            <div class="vt-list-loading">Loading…</div>
+        </div>
+    </div>
+
+    <!-- ══ MAIN PANEL ════════════════════════════════════════════ -->
+    <div class="vt-main mobile-hidden" id="vtMain">
+
+        <!-- Empty state -->
+        <div class="vt-empty" id="vtEmpty">
+            <div class="vt-empty-icon">💬</div>
+            <h3>Your conversations</h3>
+            <p>Select a group chat from a meeting,<br>or start a direct message.</p>
+            <button class="vt-empty-btn" onclick="openNewDmModal()">
+                Start a direct message
+            </button>
+        </div>
+
+        <!-- Thread view (hidden until a chat is selected) -->
+        <div class="vt-thread" id="vtThread" style="display:none;">
+
+            <!-- Thread header -->
+            <div class="vt-thread-header">
+                <button class="vt-back-btn" onclick="closeThread()" title="Back">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2.5">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <div class="vt-thread-avatar" id="vtThreadAvatar">?</div>
+                <div class="vt-thread-meta">
+                    <div class="vt-thread-name" id="vtThreadName">Chat</div>
+                    <div class="vt-thread-sub"  id="vtThreadSub"></div>
+                </div>
+                <div class="vt-thread-actions" id="vtThreadActions"></div>
+            </div>
+
+            <!-- Messages -->
+            <div class="vt-messages" id="vtMessages"></div>
+
+            <!-- Input row -->
+            <div class="vt-input-row">
+                <input type="text" class="vt-msg-input" id="vtMsgInput"
+                       placeholder="Type a message…"
+                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendMsg();event.preventDefault();}">
+                <button class="vt-send-btn" onclick="sendMsg()" title="Send">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2.5">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ NEW DM MODAL ══════════════════════════════════════════════ -->
+<div class="vt-modal-overlay" id="newDmModal"
+     onclick="if(event.target===this)closeNewDmModal()">
+    <div class="vt-modal-box">
+        <div class="vt-modal-header">
+            <span>New Direct Message</span>
+            <button class="vt-modal-close" onclick="closeNewDmModal()">✕</button>
+        </div>
+        <div class="vt-modal-body">
+            <!-- Search with icon -->
+            <div class="vt-dm-search-wrap">
+                <svg class="vt-dm-search-icon" width="13" height="13" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" class="vt-modal-input" id="dmSearchInput"
+                       placeholder="Search by name or email…"
+                       oninput="searchPeople(this.value)" autocomplete="off">
+            </div>
+            <!-- Hint shown before typing -->
+            <div class="vt-dm-hint" id="dmHint">Type at least 2 characters to search</div>
+            <div class="vt-dm-results" id="dmSearchResults"></div>
+        </div>
+    </div>
+</div>
+
+
+<form style="display:none">{% csrf_token %}</form>
+
+{% endblock %}
+
+
+{% block script %}
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   VETRI CHAT PAGE  —  Teams-like persistent chat
+   ═══════════════════════════════════════════════════════════════ */
+
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+
+/* ── Placeholder messages for empty group chats ── */
+const EMPTY_CHAT_HINTS = [
+    'Be the first to say hello! 👋',
+    'No messages yet — break the ice! ❄️',
+    'Quiet in here… start the conversation!',
+    'Nothing yet — send the first message 🚀',
+    'The chat is waiting for you…',
+];
+
+function randomHint() {
+    return EMPTY_CHAT_HINTS[Math.floor(Math.random() * EMPTY_CHAT_HINTS.length)];
+}
+
+/* ── state ── */
+let activeTab   = 'group';
+let activeChat  = null;
+let pollTimer   = null;
+let lastMsgTime = null;
+let groupChats  = [];
+let dms         = [];
+
+/* ── Mobile: track which panel is shown ── */
+const isMobile = () => window.innerWidth <= 640;
+
+function showSidebar() {
+    document.getElementById('vtSidebar').classList.remove('mobile-hidden');
+    document.getElementById('vtMain').classList.add('mobile-hidden');
+}
+function showMain() {
+    if (isMobile()) {
+        document.getElementById('vtSidebar').classList.add('mobile-hidden');
+        document.getElementById('vtMain').classList.remove('mobile-hidden');
+    } else {
+        document.getElementById('vtSidebar').classList.remove('mobile-hidden');
+        document.getElementById('vtMain').classList.remove('mobile-hidden');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════ */
+async function init() {
+    await Promise.all([fetchGroupChats(), fetchDMs()]);
+    renderConvList();
+
+    /* Auto-open from URL hash */
+    const hash = window.location.hash;
+    if (hash.startsWith('#group-')) {
+        const id = parseInt(hash.slice(7));
+        if (!isNaN(id)) openChat('group', id);
+    } else if (hash.startsWith('#dm-')) {
+        const id = parseInt(hash.slice(4));
+        if (!isNaN(id)) openChat('dm', id);
+    } else {
+        /* On desktop show empty state; on mobile show sidebar */
+        if (!isMobile()) showMain();
+        else showSidebar();
+    }
+
+    setInterval(async () => {
+        if (!activeChat) {
+            await Promise.all([fetchGroupChats(), fetchDMs()]);
+            renderConvList();
+        }
+    }, 10000);
+
+    window.addEventListener('resize', () => {
+        if (!isMobile()) {
+            document.getElementById('vtSidebar').classList.remove('mobile-hidden');
+            document.getElementById('vtMain').classList.remove('mobile-hidden');
+        }
+    });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DATA FETCHING
+   ═══════════════════════════════════════════════════════════════ */
+async function fetchGroupChats() {
+    try {
+        const r = await fetch('/meeting/chat/list/');
+        groupChats = (await r.json()).chats || [];
+    } catch { groupChats = []; }
+}
+
+async function fetchDMs() {
+    try {
+        const r = await fetch('/meeting/dm/');
+        dms = (await r.json()).dms || [];
+    } catch { dms = []; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONVERSATION LIST
+   ═══════════════════════════════════════════════════════════════ */
+function renderConvList() {
+    const list = document.getElementById('vtConvList');
+    const q    = document.getElementById('vtSearchInput').value.toLowerCase();
+
+    const items = activeTab === 'group'
+        ? groupChats.filter(c => c.meeting_title.toLowerCase().includes(q))
+        : dms.filter(d =>
+            d.other_user.name.toLowerCase().includes(q) ||
+            d.other_user.email.toLowerCase().includes(q));
+
+    if (!items.length) {
+        list.innerHTML = `<div class="vt-no-convs">${
+            activeTab === 'group'
+                ? '📅 No group chats yet.<br>Schedule a meeting to create one.'
+                : '👤 No direct messages yet.<br>Click <strong>+</strong> to start one.'
+        }</div>`;
+        return;
+    }
+
+    list.innerHTML = items.map(item => {
+        const id     = activeTab === 'group' ? item.chat_id : item.dm_id;
+        const name   = activeTab === 'group' ? item.meeting_title : item.other_user.name;
+
+        /* Fix: never show raw HTML — show a friendly hint for empty chats */
+        const rawLast = item.last_message || '';
+        const hasMsg  = rawLast.trim().length > 0;
+        const preview = hasMsg ? rawLast : randomHint();
+
+        const time   = item.last_at ? fmtConvTime(item.last_at) : '';
+        const active = activeChat &&
+                       activeChat.type === activeTab &&
+                       activeChat.id   === id;
+
+        return `
+        <div class="vt-conv-item ${active ? 'active' : ''}"
+             onclick="openChat('${activeTab}', ${id})">
+            <div class="vt-conv-avatar ${activeTab === 'group' ? 'group' : ''}">
+                ${initials(name)}
+            </div>
+            <div class="vt-conv-body">
+                <div class="vt-conv-name">${esc(name)}</div>
+                <div class="vt-conv-last ${hasMsg ? 'has-msg' : ''}">${esc(preview).slice(0, 55)}</div>
+            </div>
+            ${time ? `<div class="vt-conv-time">${time}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function switchTab(tab, el) {
+    activeTab = tab;
+    document.querySelectorAll('.vt-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    renderConvList();
+}
+
+function filterConvList(q) { renderConvList(); }
+
+/* ═══════════════════════════════════════════════════════════════
+   THREAD OPEN / CLOSE
+   ═══════════════════════════════════════════════════════════════ */
+async function openChat(type, id) {
+    stopPoll();
+    activeChat = { type, id };
+    window.location.hash = `${type}-${id}`;
+    renderConvList();
+
+    showMain();
+
+    document.getElementById('vtEmpty').style.display  = 'none';
+    document.getElementById('vtThread').style.display = 'flex';
+
+    lastMsgTime = null;
+    await loadMessages(type, id, false);
+
+    startPoll(type, id);
+}
+
+function closeThread() {
+    stopPoll();
+    activeChat = null;
+    window.location.hash = '';
+
+    document.getElementById('vtEmpty').style.display  = 'flex';
+    document.getElementById('vtThread').style.display = 'none';
+    renderConvList();
+
+    showSidebar();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LOAD / APPEND MESSAGES
+   ═══════════════════════════════════════════════════════════════ */
+async function loadMessages(type, id, pollMode) {
+    let url;
+    if (type === 'group') {
+        url = pollMode && lastMsgTime
+            ? `/meeting/chat/${id}/poll/?since=${encodeURIComponent(lastMsgTime)}`
+            : `/meeting/chat/${id}/messages/`;
+    } else {
+        url = pollMode && lastMsgTime
+            ? `/meeting/dm/${id}/?since=${encodeURIComponent(lastMsgTime)}`
+            : `/meeting/dm/${id}/`;
+    }
+
+    try {
+        const r    = await fetch(url);
+        if (!r.ok) return;
+        const data = await r.json();
+        const msgs = data.messages || [];
+
+        if (!pollMode) {
+            const name = type === 'group'
+                ? (groupChats.find(c => c.chat_id === id)?.meeting_title || 'Group Chat')
+                : (data.other_user?.name || 'Direct Message');
+
+            document.getElementById('vtThreadAvatar').textContent = initials(name);
+            document.getElementById('vtThreadName').textContent   = name;
+
+            if (type === 'group') {
+                const members = data.members || [];
+                document.getElementById('vtThreadSub').textContent =
+                    members.length ? `${members.length} member${members.length > 1 ? 's' : ''}` : '';
+
+                const mUrl = data.meeting_url || '';
+                document.getElementById('vtThreadActions').innerHTML = mUrl ? `
+                    <a href="${esc(mUrl)}" class="vt-join-btn">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2.5">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                        <span>Join</span>
+                    </a>` : '';
+            } else {
+                document.getElementById('vtThreadSub').textContent   = '';
+                document.getElementById('vtThreadActions').innerHTML = '';
+            }
+
+            const area = document.getElementById('vtMessages');
+            area.innerHTML = '';
+            msgs.forEach(renderMsg);
+            area.scrollTop = area.scrollHeight;
+
+            lastMsgTime = msgs.length
+                ? msgs[msgs.length - 1].sent_at
+                : new Date().toISOString();
+
+        } else {
+            if (!msgs.length) return;
+            const area     = document.getElementById('vtMessages');
+            const atBottom = area.scrollTop + area.clientHeight >= area.scrollHeight - 50;
+            msgs.forEach(renderMsg);
+            if (atBottom) area.scrollTop = area.scrollHeight;
+            lastMsgTime = msgs[msgs.length - 1].sent_at;
+
+            const last = msgs[msgs.length - 1];
+            if (type === 'group') {
+                const c = groupChats.find(c => c.chat_id === id);
+                if (c) { c.last_message = last.text; c.last_at = last.sent_at; }
+            } else {
+                const d = dms.find(d => d.dm_id === id);
+                if (d) { d.last_message = last.text; d.last_at = last.sent_at; }
+            }
+            renderConvList();
+        }
+    } catch(e) {}
+}
+
+function renderMsg(m) {
+    const area = document.getElementById('vtMessages');
+    if (!area) return;
+    if (document.getElementById('vt-msg-' + m.id)) return;
+
+    const div  = document.createElement('div');
+    div.id     = 'vt-msg-' + m.id;
+    div.className = 'vt-msg ' + (m.is_me ? 'vt-msg-own' : 'vt-msg-other');
+
+    const time = new Date(m.sent_at).toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    if (m.is_me) {
+        div.innerHTML = `
+            <div class="vt-bubble vt-bubble-own">${esc(m.text)}</div>
+            <div class="vt-msg-time">${time}</div>`;
+    } else {
+        div.innerHTML = `
+            <div class="vt-msg-sender">${esc(m.sender)}</div>
+            <div class="vt-bubble vt-bubble-other">${esc(m.text)}</div>
+            <div class="vt-msg-time">${time}</div>`;
+    }
+    area.appendChild(div);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SEND MESSAGE
+   ═══════════════════════════════════════════════════════════════ */
+async function sendMsg() {
+    const input = document.getElementById('vtMsgInput');
+    const text  = input.value.trim();
+    if (!text || !activeChat) return;
+    input.value = '';
+
+    const tmpId  = 'tmp-' + Date.now();
+    const area   = document.getElementById('vtMessages');
+    const tmp    = document.createElement('div');
+    tmp.id       = tmpId;
+    tmp.className = 'vt-msg vt-msg-own';
+    const ttime  = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    tmp.innerHTML = `
+        <div class="vt-bubble vt-bubble-own">${esc(text)}</div>
+        <div class="vt-msg-time sending">${ttime} …</div>`;
+    area.appendChild(tmp);
+    area.scrollTop = area.scrollHeight;
+
+    try {
+        const url = activeChat.type === 'group'
+            ? `/meeting/chat/${activeChat.id}/send/`
+            : `/meeting/dm/${activeChat.id}/send/`;
+
+        const r    = await fetch(url, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body:    JSON.stringify({ text }),
+        });
+        const data = await r.json();
+
+        const node = document.getElementById(tmpId);
+        if (node && data.id) {
+            node.id = 'vt-msg-' + data.id;
+            const t = node.querySelector('.vt-msg-time');
+            if (t) { t.textContent = ttime ; t.classList.remove('sending'); }
+        }
+
+        if (data.sent_at) lastMsgTime = data.sent_at;
+
+        if (activeChat.type === 'group') {
+            const c = groupChats.find(c => c.chat_id === activeChat.id);
+            if (c) { c.last_message = text; c.last_at = data.sent_at; }
+        } else {
+            const d = dms.find(d => d.dm_id === activeChat.id);
+            if (d) { d.last_message = text; d.last_at = data.sent_at; }
+        }
+        renderConvList();
+
+    } catch(e) {
+        const node = document.getElementById(tmpId);
+        if (node) node.querySelector('.vt-msg-time').textContent = 'Failed ✗';
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   POLLING
+   ═══════════════════════════════════════════════════════════════ */
+function startPoll(type, id) {
+    stopPoll();
+    pollTimer = setInterval(() => {
+        if (activeChat?.type === type && activeChat?.id === id) {
+            loadMessages(type, id, true);
+        }
+    }, 2000);
+}
+function stopPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NEW DM MODAL
+   ═══════════════════════════════════════════════════════════════ */
+function openNewDmModal() {
+    document.getElementById('newDmModal').style.display = 'flex';
+    document.getElementById('dmHint').style.display     = 'block';
+    document.getElementById('dmSearchResults').innerHTML = '';
+    setTimeout(() => document.getElementById('dmSearchInput').focus(), 50);
+}
+
+function closeNewDmModal() {
+    document.getElementById('newDmModal').style.display = 'none';
+    document.getElementById('dmSearchInput').value      = '';
+    document.getElementById('dmSearchResults').innerHTML = '';
+    document.getElementById('dmHint').style.display     = 'block';
+}
+
+let _dmTimer = null;
+function searchPeople(q) {
+    clearTimeout(_dmTimer);
+    const res  = document.getElementById('dmSearchResults');
+    const hint = document.getElementById('dmHint');
+
+    if (q.length < 2) {
+        res.innerHTML = '';
+        hint.style.display = 'block';
+        return;
+    }
+    hint.style.display = 'none';
+
+    _dmTimer = setTimeout(async () => {
+        try {
+            const r    = await fetch(`/users/search/?q=${encodeURIComponent(q)}`);
+            const data = await r.json();
+            if (!data.users?.length) {
+                res.innerHTML = '<div class="vt-dm-no-result">No users found.</div>';
+                return;
+            }
+            res.innerHTML = data.users.map(u => `
+                <div class="vt-dm-user" onclick="startDmWith(${u.id})">
+                    <div class="vt-dm-avatar">${initials(u.name)}</div>
+                    <div class="vt-dm-info">
+                        <div class="vt-dm-name">${esc(u.name)}</div>
+                        <div class="vt-dm-email">${esc(u.email)}</div>
+                    </div>
+                </div>`).join('');
+        } catch(e) {
+            res.innerHTML = '<div class="vt-dm-no-result">Search failed. Try again.</div>';
+        }
+    }, 280);
+}
+
+async function startDmWith(userId) {
+    closeNewDmModal();
+    try {
+        const r    = await fetch('/meeting/dm/get-or-create/', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body:    JSON.stringify({ user_id: userId }),
+        });
+        const data = await r.json();
+        await fetchDMs();
+        activeTab = 'dm';
+        document.getElementById('tab-group').classList.remove('active');
+        document.getElementById('tab-dm').classList.add('active');
+        renderConvList();
+        openChat('dm', data.dm_id);
+    } catch(e) {
+        alert('Could not start conversation.');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+function initials(name) {
+    if (!name) return '?';
+    return name.trim().split(/\s+/).map(n => n[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function esc(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function fmtConvTime(iso) {
+    if (!iso) return '';
+    const d   = new Date(iso);
+    const now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 60)   return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (d >= today)  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const yday = new Date(today); yday.setDate(today.getDate() - 1);
+    if (d >= yday)   return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+{% endblock %}

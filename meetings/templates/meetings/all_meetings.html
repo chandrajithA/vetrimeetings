@@ -710,6 +710,7 @@ async function submitSchedule(){
     sucEl.classList.remove('hidden');
     schInvitees=[]; document.getElementById('schInviteeList').innerHTML='';
     await mpLoad();
+    setTimeout(closeScheduleModal, 2000);
   } catch(err){
     errEl.textContent=err.message; errEl.classList.remove('hidden');
   } finally {
