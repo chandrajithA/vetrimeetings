@@ -9,7 +9,7 @@
 
 {% block content %}
 
-<div class="vt-chat-app" id="vtChatApp">
+<div class="main-content" id="vtChatApp">
 
     <!-- ══ LEFT SIDEBAR ══════════════════════════════════════════ -->
     <div class="vt-sidebar" id="vtSidebar">
@@ -381,7 +381,7 @@ async function loadMessages(type, id, pollMode) {
                 : new Date().toISOString();
 
         } else {
-            if (!msgs.length) return;
+            if (!msgs.length) return false;
             const area     = document.getElementById('vtMessages');
             const atBottom = area.scrollTop + area.clientHeight >= area.scrollHeight - 50;
             msgs.forEach(renderMsg);
@@ -397,6 +397,7 @@ async function loadMessages(type, id, pollMode) {
                 if (d) { d.last_message = last.text; d.last_at = last.sent_at; }
             }
             renderConvList();
+            return true;
         }
     } catch(e) {}
 }
@@ -487,16 +488,32 @@ async function sendMsg() {
 /* ═══════════════════════════════════════════════════════════════
    POLLING
    ═══════════════════════════════════════════════════════════════ */
+const POLL_MIN  = 2000;   // 2s  — active conversation
+const POLL_MAX  = 30000;  // 30s — idle cap
+let   pollDelay = POLL_MIN;
+
 function startPoll(type, id) {
     stopPoll();
-    pollTimer = setInterval(() => {
-        if (activeChat?.type === type && activeChat?.id === id) {
-            loadMessages(type, id, true);
-        }
-    }, 2000);
+    pollDelay = POLL_MIN;   // reset backoff on every new chat open
+
+    async function tick() {
+        if (!activeChat || activeChat.type !== type || activeChat.id !== id) return;
+
+        const hadMessages = await loadMessages(type, id, true);
+
+        // If new messages arrived → reset to fast; otherwise back off
+        pollDelay = hadMessages
+            ? POLL_MIN
+            : Math.min(pollDelay * 1.5, POLL_MAX);
+
+        pollTimer = setTimeout(tick, pollDelay);
+    }
+
+    pollTimer = setTimeout(tick, pollDelay);
 }
+
 function stopPoll() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -600,6 +617,18 @@ function fmtConvTime(iso) {
     if (d >= yday)   return 'Yesterday';
     return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (!activeChat) return;
+
+    if (document.hidden) {
+        // Tab is backgrounded — stop hammering the server
+        stopPoll();
+    } else {
+        // User came back — resume immediately
+        startPoll(activeChat.type, activeChat.id);
+    }
+});
 
 document.addEventListener('DOMContentLoaded', init);
 </script>

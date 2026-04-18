@@ -1,0 +1,199 @@
+{% extends 'meetings/base.html' %}
+{% load static %}
+
+{% block title %}<title>Settings — Vetri Meetings</title>{% endblock %}
+
+{% block style %}
+<link rel="stylesheet" href="{% static 'meetings/css/settings.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="main-content">
+
+    <h2 class="settings-title">Settings</h2>
+    <p class="settings-subtitle">Manage your account and preferences</p>
+
+    <div class="settings-card">
+
+        <h3>Profile Information</h3>
+
+        <form method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <!-- Avatar row -->
+            <div class="avatar-row">
+                <div class="avatar" id="avatarPreview">
+                    {% comment %} {% if request.user.profile_picture %}
+                        <img src="{{ request.user.profile_picture.url }}" id="avatarImg">
+                    {% else %} {% endcomment %}
+                    {% if profile_image_url %}
+                        <img src="{{ profile_image_url }}" id="avatarImg">
+                    {% else %}
+                        <span id="avatarText">
+                            {{ request.user.name|slice:":1"|upper }}
+                        </span>
+                    {% endif %}
+                </div>
+
+                <div class="avatar-actions">
+                    <label class="upload-btn">
+                        Upload photo
+                        <input type="file" name="profile_picture" id="profileInput" accept="image/*">
+                    </label>
+
+                    {% if request.user.user_profile_picture %}
+                    <button type="submit" name="remove_photo" class="remove-btn">
+                        Remove
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Form grid -->
+            <div class="form-grid">
+                <div>
+                    <label>First name</label>
+                    <input type="text" name="name" value="{{ request.user.name }}">
+                </div>
+
+                <div>
+                    <label>Email address</label>
+                    <input type="email" name="email" value="{{ request.user.email }}">
+                </div>
+
+            </div>
+
+            <!-- Buttons -->
+            <div class="form-actions">
+                <button type="submit" class="save-btn" id="saveProfileBtn" disabled>Save Changes</button>
+                <a href="{% url 'meetings:settings_page' %}" class="cancel-btn">Cancel</a>
+            </div>
+
+        </form>
+
+        
+
+        
+
+        <h3 style="margin-top:20px;">Password</h3>
+
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="password_form" value="1">
+
+            <div class="form-grid">
+
+                {% if request.user.has_usable_password %}
+                <div>
+                    <label>Current password</label>
+                    <input type="password" name="current_password" required>
+                </div>
+                {% endif %}
+
+                <div>
+                    <label>New password</label>
+                    <input type="password" name="new_password" required>
+                </div>
+
+                <div>
+                    <label>Confirm password</label>
+                    <input type="password" name="confirm_password" required>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="save-btn">
+                    {% if request.user.has_usable_password %}
+                        Change Password
+                    {% else %}
+                        Set Password
+                    {% endif %}
+                </button>
+            </div>
+        </form>
+        
+    </div>
+</div>
+{% endblock %}
+
+
+{% block script %}
+<script>
+const input = document.getElementById("profileInput");
+const avatar = document.getElementById("avatarPreview");
+
+
+input?.addEventListener("change", function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+        alert("Please select a valid image");
+        this.value = "";
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        avatar.innerHTML = `<img src="${e.target.result}" id="avatarImg">`;
+    };
+    reader.readAsDataURL(file);
+});
+
+
+
+
+
+// ===============================
+// Enable Save button on changes
+// ===============================
+const saveBtn = document.getElementById("saveProfileBtn");
+
+const profileFields = {
+    name: document.querySelector('input[name="name"]'),
+    email: document.querySelector('input[name="email"]'),
+};
+
+const profileFileInput = document.getElementById("profileInput");
+
+// Store original values
+const originalValues = {
+    name: profileFields.name?.value,
+    email: profileFields.email?.value,
+};
+
+function checkProfileChanges() {
+    let changed = false;
+
+    // Check text fields
+    for (let key in profileFields) {
+        if (profileFields[key] && profileFields[key].value !== originalValues[key]) {
+            changed = true;
+            break;
+        }
+    }
+
+    // Check profile picture
+    if (profileFileInput && profileFileInput.files.length > 0) {
+        changed = true;
+    }
+
+    // Enable/disable button
+    if (saveBtn) {
+        saveBtn.disabled = !changed;
+    }
+}
+
+// Attach listeners
+for (let key in profileFields) {
+    profileFields[key]?.addEventListener("input", checkProfileChanges);
+}
+
+profileFileInput?.addEventListener("change", checkProfileChanges);
+
+</script>
+
+{% endblock %}
+
+
+

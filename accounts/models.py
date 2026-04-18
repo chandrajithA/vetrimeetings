@@ -10,7 +10,7 @@ def profile_image_upload_path(instance, filename):
     ext = filename.split('.')[-1]
     new_filename = f"{uuid.uuid4()}.{ext}"
 
-    name = slugify(instance.first_name or "user")
+    name = slugify(instance.name or "user")
     user_id = instance.pk or "temp"
 
     return f'User_images/{name}_ID_{user_id}/{new_filename}'

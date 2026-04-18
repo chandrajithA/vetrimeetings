@@ -130,7 +130,7 @@
     font-family: 'DM Sans', sans-serif;
 }
  
-.modal-content--wide  { max-width: 520px; }
+.modal-content--wide  { max-width: 420px; width: 420px; }
  
 .modal-content--scroll,
 .modal-content--wide.modal-content--scroll {
@@ -413,12 +413,14 @@
 /* ── CAMERA PREVIEW ── */
 .preview-video-wrap {
     width: 100%;
-    aspect-ratio: 16 / 9;
+    height: 220px;              
     background: #0b0d11;
     border-radius: var(--radius);
     overflow: hidden;
     position: relative;
     margin-top: 10px;
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 .preview-video { width: 100%; height: 100%; object-fit: cover; display: block; }
  
@@ -985,4 +987,6 @@
     .mact-pair .mact-btn    { font-size: 9.5px; padding: 4px; }
 }
  
+
+
 .hidden { display: none !important; }

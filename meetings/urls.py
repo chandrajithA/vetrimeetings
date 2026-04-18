@@ -10,10 +10,12 @@ urlpatterns = [
     path('meeting/save-recording/', save_recording, name='save_recording'),
     path('meetings/', all_meetings_page, name='all_meetings'),
     path("meeting/join/", join_by_id, name="join_by_id"),
+    path('settings/', settings_page, name='settings_page'), 
 
     # API endpoints
     path("meeting/token/<str:room_name>/", get_token, name="meeting_token"),
     path("meeting/end/<str:room_name>/", end_meeting, name="meeting_end"),
+    path('meeting/deactivate/<str:room_name>/', deactivate_meeting, name='deactivate_meeting'),
     path("participants/<str:room_name>/", participants, name="meeting_participants"),
     
     # ... existing urls ...

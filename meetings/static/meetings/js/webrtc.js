@@ -39,6 +39,7 @@ let chatOpen    = false;
 let participantStatuses = {};
 let meetingEndedByHost  = false;
 
+
 /* ── Helper: wipe all prejoin keys so preview always re-asks next time ── */
 function _clearPrejoinStorage() {
     sessionStorage.removeItem("prejoin_mic");
@@ -147,6 +148,10 @@ async function initRoom(opts = {}) {
         attachRoomEvents();
         await room.connect(livekit_url, token, { autoSubscribe: true });
         console.log("Connected to LiveKit:", ROOM_NAME);
+
+        if (typeof window._onMeetingFullyStarted === 'function') {
+            window._onMeetingFullyStarted();
+        }
 
         await loadChatHistory();
 
@@ -995,7 +1000,7 @@ async function loadChatHistory() {
             const div = document.createElement("div");
             const time = new Date(m.sent_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
             div.className = "chat-message " + (m.is_me ? "chat-own" : "chat-other");
-            div.innerHTML = `<span class="chat-sender">${escapeHtml(m.is_me ? "You" : m.sender)}</span><span class="chat-text">${escapeHtml(m.text)}</span><span class="chat-time">${time}</span>`;
+            div.innerHTML = `<span class="chat-sender">${escapeHtml(m.is_me ? "" : m.sender)}</span><span class="chat-text">${escapeHtml(m.text)}</span><span class="chat-time">${time}</span>`;
             frag.appendChild(div);
         });
         chatEl.insertBefore(frag, chatEl.firstChild);

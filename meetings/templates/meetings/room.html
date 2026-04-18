@@ -533,5 +533,33 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
 
 </script>
 
+<script>
+// ── Bug 2 fix: deactivate meeting if host navigates away before meeting starts ──
+const CSRF_TOKEN = "{{ csrf_token }}";
+
+// Track whether the host has genuinely "started" (connected to LiveKit)
+window._meetingFullyStarted = false;
+
+// Called by webrtc.js after successful room.connect()
+window._onMeetingFullyStarted = function() {
+    window._meetingFullyStarted = true;
+};
+
+{% if is_host %}
+// Send deactivate beacon on back/close/refresh ONLY if not fully started
+window.addEventListener('pagehide', function() {
+    if (!window._meetingFullyStarted) {
+        navigator.sendBeacon(
+            '/meeting/deactivate/{{ room_name }}/',
+            new Blob(
+                [JSON.stringify({csrfmiddlewaretoken: CSRF_TOKEN})],
+                {type: 'application/json'}
+            )
+        );
+    }
+});
+{% endif %}
+</script>
+
 </body>
 </html>

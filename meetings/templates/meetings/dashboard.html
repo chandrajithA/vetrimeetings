@@ -206,6 +206,12 @@
                            maxlength="80" autocomplete="off">
                 </div>
 
+                <div class="join-field">
+                    <label for="newHostName">Your Name</label>
+                    <input type="text" id="newHostName" placeholder="Enter your name"
+                        value="{{ request.user.name|default:'' }}" maxlength="60" autocomplete="off">
+                </div>
+
                 <button type="button" class="join-btn" id="newNextBtn" onclick="newGoToPreview()">
                     Continue
                 </button>
@@ -244,12 +250,6 @@
                              data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
                         <span id="newCamLabel">Cam On</span>
                     </button>
-                </div>
-
-                <div class="join-field">
-                    <label for="lobbyName">Your Name</label>
-                    <input type="text" id="lobbyName" placeholder="Enter your name"
-                        value="{{ request.user.name|default:'' }}" maxlength="60" autocomplete="off">
                 </div>
 
                 <button type="button" class="join-btn" id="startFinalBtn" onclick="startMeetingFinal()">
@@ -552,7 +552,8 @@ async function loadMeetingsForDate() {
         const data = await res.json();
         renderMeetingList(data.meetings || [], container);
     } catch(e) {
-        container.innerHTML = '<div class="meetings-empty"><div class="empty-icon">⚠️</div>Failed to load.</div>';
+        console.error('loadMeetingsForDate:', e);
+        container.innerHTML = `<div class="meetings-empty"><div class="empty-icon">⚠️</div><p>Failed to load.</p></div>`;
     }
 }
 
@@ -599,6 +600,9 @@ function copyMeetingUrl(btn) {
     });
 }
 
+
+
+const _meetingDataMap = new Map();
 function renderMeetingList(meetings, container) {
     if (!meetings.length) {
         container.innerHTML = `
@@ -609,44 +613,48 @@ function renderMeetingList(meetings, container) {
         return;
     }
 
+    // Store meeting data safely — avoids JSON-in-HTML-attribute escaping bugs
+    meetings.forEach(m => _meetingDataMap.set(m.id, m));
+
+    function fmtDateShort(isoStr) {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
     const html = meetings.map(m => {
-        const startTime = m.is_all_day ? 'All day' : formatTime12(m.start);
-        const endTime   = (!m.is_all_day && m.end) ? formatTime12(m.end) : '';
+        const startTime  = m.is_all_day ? 'All day' : formatTime12(m.start);
+        const endTime    = (!m.is_all_day && m.end) ? formatTime12(m.end) : '';
         const meetingUrl = m.meeting_url || `${window.location.origin}/room/${m.room_name}/`;
 
-        /* ── Date range label ── */
-        function fmtDateShort(isoStr) {
-            if (!isoStr) return '';
-            const d = new Date(isoStr);
-            return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-        }
+        // ✅ Always use original saved DB start for display label
+        const originStart = m.original_start || m.start;
 
         let dateRangeHtml = '';
         if (m.repeat && m.repeat !== 'none') {
-            const fromDate  = fmtDateShort(m.start);
+            const fromDate  = fmtDateShort(originStart);
             const untilDate = m.repeat_end_date
                 ? fmtDateShort(m.repeat_end_date + 'T00:00:00')
                 : '';
-            if (!untilDate){
+            if (!untilDate) {
                 dateRangeHtml = `
                     <span class="mc-meta-item mc-daterange">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                         ${fromDate}
                         <span class="badge badge-repeat" style="margin-left:4px">${repeatLabel(m.repeat)}</span>
                     </span>`;
-            }
-            else{
-            dateRangeHtml = `
-                <span class="mc-meta-item mc-daterange">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    ${fromDate}
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin:0 2px"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                    ${untilDate}
-                    <span class="badge badge-repeat" style="margin-left:4px">${repeatLabel(m.repeat)}</span>
-                </span>`;
+            } else {
+                dateRangeHtml = `
+                    <span class="mc-meta-item mc-daterange">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        ${fromDate}
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin:0 2px"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                        ${untilDate}
+                        <span class="badge badge-repeat" style="margin-left:4px">${repeatLabel(m.repeat)}</span>
+                    </span>`;
             }
         } else {
-            const dateLabel = fmtDateShort(m.start);
+            const dateLabel = fmtDateShort(originStart);
             if (dateLabel) {
                 dateRangeHtml = `
                     <span class="mc-meta-item mc-daterange">
@@ -656,16 +664,13 @@ function renderMeetingList(meetings, container) {
             }
         }
 
-        /* ── Badges: only Host/Invitee + All Day here, repeat moved to meta ── */
-        const badges = [];
-        const hostbadges = [];
-        if (m.is_host) hostbadges.push('<span class="badge badge-host">Host</span>');
-        else           hostbadges.push('<span class="badge badge-invitee">Invited</span>');
-        if (m.is_all_day) badges.push('<span class="badge badge-allday">All day</span>');
-        if (m.repeat && m.repeat !== 'none') badges.push(`<span class="badge badge-repeat">${repeatLabel(m.repeat)}</span>`);
-        
+        const hostbadges = m.is_host
+            ? '<span class="badge badge-host">Host</span>'
+            : '<span class="badge badge-invitee">Invited</span>';
+
+        // ✅ Safe onclick — uses id lookup, no JSON-in-HTML
         const editBtn   = m.is_host
-            ? `<button class="mact-btn mact-edit" onclick="openEditModal(${JSON.stringify(m).replace(/"/g,'&quot;')})">Edit</button>`
+            ? `<button class="mact-btn mact-edit" onclick="openEditModalById(${m.id})">Edit</button>`
             : '';
         const deleteBtn = m.is_host
             ? `<button class="mact-btn mact-delete" onclick="openDeleteConfirm(${m.id}, '${escHtml(m.title)}')">Delete</button>`
@@ -688,24 +693,22 @@ function renderMeetingList(meetings, container) {
             <div class="meeting-card-body">
                 <div class="mc-top-row">
                     <div class="mc-title-badges-row">
-                        <span class="mc-title">Meeting Title - ${escHtml(m.title)}</span>
-                        <div class="mc-badges">
-                            ${hostbadges.join('')}
-                        </div>
+                        <span class="mc-title">${escHtml(m.title)}</span>
+                        <div class="mc-badges">${hostbadges}</div>
                     </div>
                 </div>
-                
+
                 <div class="mc-meta">
                     ${dateRangeHtml}
                     <span class="mc-meta-item mc-id">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
                         ${fmtId(m.meeting_id)}
                         <button class="copy-btn" onclick="copyText('${m.meeting_id}', this)" title="Copy ID">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                         </button>
                     </span>
                     <span class="mc-meta-item mc-passcode">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                         ${m.passcode}
                         <button class="copy-btn" onclick="copyText('${m.passcode}', this)" title="Copy Passcode">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -743,6 +746,14 @@ function renderMeetingList(meetings, container) {
     }).join('');
 
     container.innerHTML = `<div class="meeting-list">${html}</div>`;
+}
+
+
+// ✅ New safe wrapper — looks up meeting by id instead of passing JSON through HTML
+function openEditModalById(id) {
+    const m = _meetingDataMap.get(id);
+    if (!m) return;
+    openEditModal(m);
 }
 
 function fmtId(id) {
@@ -860,6 +871,7 @@ function _initEditFlatpickrs() {
     if (!_fpEditStartDate) {
         _fpEditStartDate = flatpickr('#editStartDate', {
             dateFormat: 'Y-m-d',
+            minDate: 'today',         // ← add this
             disableMobile: true,
             onChange([d]) {
                 if (!d) return;
@@ -889,7 +901,7 @@ function _initEditFlatpickrs() {
             }
         });
     } else {
-        _fpEditStartDate.set('minDate', null);
+        _fpEditStartDate.set('minDate', 'today');  // ← was null
         _fpEditStartDate.set('maxDate', null);
     }
 
@@ -978,15 +990,16 @@ function openEditModal(m) {
     document.getElementById('editError').classList.add('hidden');
     document.getElementById('editSuccess').classList.add('hidden');
 
-    // Step 1 — init instances (creates them if first time, resets restrictions if reopen)
     _initEditFlatpickrs();
 
-    // Step 2 — populate values after flatpickr is ready
+    // ✅ Always use original saved DB dates, not the date-adjusted display values
+    const editStart = m.original_start || m.start;
+    const editEnd   = m.original_end   || m.end;
+
     setTimeout(() => {
-        // Parse start
         let startDate = null;
-        if (m.start) {
-            const s  = new Date(m.start);
+        if (editStart) {
+            const s  = new Date(editStart);
             startDate = s;
             const sd = dateToISO(s);
             const st = `${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')}`;
@@ -996,25 +1009,22 @@ function openEditModal(m) {
             if (m.is_all_day && _fpEditAllDay) _fpEditAllDay.setDate(sd, true);
         }
 
-        // Parse end — clear minDate first so setDate is never blocked
-        if (m.end) {
-            const e  = new Date(m.end);
+        if (editEnd) {
+            const e  = new Date(editEnd);
             const ed = dateToISO(e);
             const et = `${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}`;
 
             if (_fpEditEndDate) {
-                _fpEditEndDate.set('minDate', null);   // ← lift restriction before setting
+                _fpEditEndDate.set('minDate', null);
                 _fpEditEndDate.setDate(ed, true);
-                // Now re-apply correct minDate (start date)
                 if (startDate) _fpEditEndDate.set('minDate', startDate);
             }
             if (_fpEditEndTime) {
-                _fpEditEndTime.set('minTime', '00:00'); // ← lift before setting
+                _fpEditEndTime.set('minTime', '00:00');
                 _fpEditEndTime.setDate(et, true);
-                // Re-apply minTime only if same day as start
-                if (startDate && m.start) {
-                    const s = new Date(m.start);
-                    if (dateToISO(s) === dateToISO(new Date(m.end))) {
+                if (startDate && editStart) {
+                    const s = new Date(editStart);
+                    if (dateToISO(s) === dateToISO(new Date(editEnd))) {
                         const h  = String(s.getHours()).padStart(2,'0');
                         const mm = String(s.getMinutes()).padStart(2,'0');
                         _fpEditEndTime.set('minTime', `${h}:${mm}`);
@@ -1023,7 +1033,6 @@ function openEditModal(m) {
             }
         }
 
-        // Repeat end date
         if (m.repeat_end_date && _fpEditRepeatEnd) {
             _fpEditRepeatEnd.set('minDate', null);
             _fpEditRepeatEnd.setDate(m.repeat_end_date, true);
@@ -1372,14 +1381,25 @@ function closeNewMeetingDialog() {
     newPermDenied = false; newMicOn = true; newCamOn = true;
     _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", true, "Mic On","Mic Off");
     _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", true, "Cam On","Cam Off");
+    // ✅ Reset name to DB value on close
+    const nameInput = document.getElementById("newHostName");
+    if (nameInput) nameInput.value = nameInput.defaultValue;
 }
 
 async function newGoToPreview() {
+    // ✅ Read name from step 1 before switching steps
+    const nameInput = document.getElementById("newHostName");
+    const hostName  = nameInput ? nameInput.value.trim() : "";
+
     document.getElementById("newStep1").classList.add("hidden");
     document.getElementById("newStep2").classList.remove("hidden");
-    const user = "{{ request.user.name|default:'' }}";
-    const avatarText = user.split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2) || "?";
+
+    // Use entered name for avatar initials
+    const avatarText = hostName
+        ? hostName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+        : "?";
     document.getElementById("newPreviewAvatar").textContent = avatarText;
+
     const result = await _startPreview("newPreviewVideo","newPreviewCamOff","newPreviewPermDenied","newPreviewAvatar", newCamOn, newMicOn, avatarText);
     newStream = result.stream; newPermDenied = result.permDenied;
     if (newPermDenied) { newMicOn = false; newCamOn = false; document.getElementById("newMicBtn").classList.add("pj-disabled"); document.getElementById("newCamBtn").classList.add("pj-disabled"); }
@@ -1415,7 +1435,10 @@ async function toggleNewCam() {
 }
 
 async function startMeetingFinal() {
-    const title   = document.getElementById("meetingTitle").value.trim() || "Quick Meeting";
+    const title    = document.getElementById("meetingTitle").value.trim() || "Quick Meeting";
+    // ✅ Use the name from step 1
+    const hostName = document.getElementById("newHostName")?.value.trim() || "";
+
     const btn = document.getElementById("startFinalBtn"), label = document.getElementById("startFinalLabel"), spinner = document.getElementById("startFinalSpinner");
     btn.disabled = true; label.textContent = "Starting…"; spinner.classList.remove("hidden");
     document.getElementById("newPreviewVideo").srcObject = null;
@@ -1429,11 +1452,13 @@ async function startMeetingFinal() {
         if (!res.ok || !data.redirect) throw new Error(data.error || "Failed to create meeting");
         sessionStorage.setItem("prejoin_mic", newMicOn ? "1" : "0");
         sessionStorage.setItem("prejoin_cam", newCamOn ? "1" : "0");
+        // ✅ Store the custom name so webrtc.js passes it to /meeting/token/
+        if (hostName) sessionStorage.setItem("join_display_name", hostName);
         window._prejoinStream = newStream; newStream = null;
         window.location.href = data.redirect;
     } catch(err) {
         label.textContent = "Start Meeting"; spinner.classList.add("hidden"); btn.disabled = false;
-        if (newStream) newStream.getTracks().forEach(t => t.enabled = true);
+        if (newStream) newStream.getTracks().forEach(t => t.enabled = false);
         alert("Could not start meeting: " + err.message);
     }
 }

@@ -16,6 +16,9 @@ from .models import *
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 import threading
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.hashers import check_password
 
 
 
@@ -635,12 +638,14 @@ def scheduled_meetings_for_date(request):
             "meeting_url": m.meeting_url,
             "start":       adj_start.isoformat() if adj_start else None,
             "end":         adj_end.isoformat()   if adj_end   else None,
-            "is_all_day":  m.is_all_day,
-            "repeat":      m.repeat,
+            "original_start": m.scheduled_start.isoformat() if m.scheduled_start else None,
+            "original_end":   m.scheduled_end.isoformat()   if m.scheduled_end   else None,
+            "is_all_day":    m.is_all_day,
+            "repeat":        m.repeat,
             "repeat_end_date": m.repeat_end_date.isoformat() if m.repeat_end_date else None,
-            "is_host":     m.host == request.user,
-            "is_active":   m.is_active,
-            "invitees":    list(m.invitees.values_list('email', flat=True)),
+            "is_host":       m.host == request.user,
+            "is_active":     m.is_active,
+            "invitees":      list(m.invitees.values_list('email', flat=True)),
         })
 
     result.sort(key=lambda x: x['start'] or '')
@@ -754,6 +759,19 @@ def edit_meeting(request, meeting_id):
         pass
 
     return JsonResponse({"status": "updated"})
+
+
+@csrf_exempt  
+@login_required
+@require_POST
+def deactivate_meeting(request, room_name):
+    meeting = Meeting.objects.filter(room_name=room_name, host=request.user).first()
+    if meeting and meeting.is_active:
+        meeting.is_active = False
+        meeting.save(update_fields=['is_active'])
+    return JsonResponse({"status": "ok"})
+
+
 
 
 @login_required
@@ -964,4 +982,81 @@ def search_users(request):
             {"id": u.id, "name": u.name, "email": u.email}
             for u in users
         ]
+    })
+    
+    
+    
+@login_required   # ← add this missing decorator
+def settings_page(request):
+    user = request.user
+
+    if request.method == "POST":
+
+        # ==========================
+        # 🔐 PASSWORD FORM
+        # ==========================
+        if "password_form" in request.POST:
+            new_password     = request.POST.get("new_password", "").strip()
+            confirm_password = request.POST.get("confirm_password", "").strip()
+            current_password = request.POST.get("current_password", "").strip()
+
+            if not new_password:
+                messages.error(request, "New password cannot be empty.")
+                return redirect("meetings:settings_page")
+
+            if new_password != confirm_password:
+                messages.error(request, "Passwords do not match.")
+                return redirect("meetings:settings_page")
+
+            if user.has_usable_password():
+                if not current_password:
+                    messages.error(request, "Current password is required.")
+                    return redirect("meetings:settings_page")
+                if not check_password(current_password, user.password):
+                    messages.error(request, "Current password is incorrect.")
+                    return redirect("meetings:settings_page")
+
+            user.set_password(new_password)
+            user.save()
+            update_session_auth_hash(request, user)
+            messages.success(request, "Password updated successfully.")
+            return redirect("meetings:settings_page")
+
+        # ==========================
+        # 🖼 REMOVE PHOTO
+        # ==========================
+        if "remove_photo" in request.POST:
+            if user.user_profile_picture:
+                user.user_profile_picture.delete(save=False)
+                user.user_profile_picture = None
+                user.save()
+            return redirect("meetings:settings_page")  # ← fixed typo "mettings"
+
+        # ==========================
+        # 👤 PROFILE UPDATE
+        # ==========================
+        if request.FILES.get("profile_picture"):
+            profile_file = request.FILES["profile_picture"]
+            if user.user_profile_picture:
+                user.user_profile_picture.delete(save=False)
+            user.user_profile_picture = profile_file
+
+        user.name  = request.POST.get("name", user.name).strip()
+        user.email = request.POST.get("email", user.email).strip()
+        user.save()
+        messages.success(request, "Profile updated successfully.")
+        return redirect("meetings:settings_page")
+
+    # ==========================
+    # GET — build profile URL safely
+    # ==========================
+    profile_image_url = None
+    if user.user_profile_picture:
+        try:
+            profile_image_url = user.user_profile_picture.url  # ← .url not the field
+        except Exception:
+            profile_image_url = None
+
+    return render(request, "meetings/settings.html", {
+        "profile_image_url": profile_image_url,
     })
