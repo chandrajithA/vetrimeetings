@@ -308,17 +308,45 @@ def save_recording(request):
 
     room_name = request.POST.get("room_name")
     file      = request.FILES.get("recording")
+    duration  = int(request.POST.get('duration_seconds', 0))
 
     if not room_name or not file:
         return JsonResponse({"error": "Missing data"}, status=400)
 
     try:
         meeting = Meeting.objects.get(room_name=room_name)
+        rec = MeetingRecording.objects.create(
+            meeting=meeting, file=file, duration_seconds=duration
+        )
+        return JsonResponse({"url": rec.file.url})
     except Meeting.DoesNotExist:
         return JsonResponse({"error": "Meeting not found"}, status=404)
+    
+    
+@login_required
+def recordings_hub(request):
+    # Recordings from meetings hosted by this user
+    recordings = MeetingRecording.objects.filter(
+        meeting__host=request.user
+    ).select_related('meeting').order_by('-recorded_at')
+    return render(request, 'meetings/recordings_hub.html', {'recordings': recordings})
 
-    rec = MeetingRecording.objects.create(meeting=meeting, file=file)
-    return JsonResponse({"url": rec.file.url})
+
+@login_required
+@require_POST
+def delete_recording(request, recording_id):
+    try:
+        rec = get_object_or_404(MeetingRecording, id=recording_id, meeting__host=request.user)
+        if rec.file:
+            rec.file.delete(save=False)
+        if hasattr(rec, 'thumbnail') and rec.thumbnail:
+            rec.thumbnail.delete(save=False)
+        rec.delete()
+        return JsonResponse({'status': 'deleted'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+    
 
 
 

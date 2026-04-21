@@ -1,33 +1,32 @@
-# from django.contrib import admin
-# from django.contrib.auth.admin import UserAdmin
-# from .models import *
+from django.contrib import admin
+from .models import *
 
 
 
 # # ==============================
 # # 📅 MEETING INLINE COMPONENTS
 # # ==============================
-# class MeetingInviteeInline(admin.TabularInline):
-#     model = MeetingInvitee
-#     extra = 0
+class MeetingInviteeInline(admin.TabularInline):
+    model = MeetingInvitee
+    extra = 0
 
 
-# @admin.register(Meeting)
-# class MeetingAdmin(admin.ModelAdmin):
-#     list_display = (
-#         "title", "host", "meeting_id",
-#         "is_active", "is_scheduled", "scheduled_start"
-#     )
+@admin.register(Meeting)
+class MeetingAdmin(admin.ModelAdmin):
+    list_display = (
+        "title", "host", "meeting_id",
+        "is_active", "is_scheduled", "scheduled_start"
+    )
 
-#     list_filter = ("is_active", "is_scheduled", "repeat")
-#     search_fields = ("title", "meeting_id", "host__email")
+    list_filter = ("is_active", "is_scheduled", "repeat")
+    search_fields = ("title", "meeting_id", "host__email")
 
-#     # ✅ ONLY VALID INLINE
-#     inlines = [MeetingInviteeInline]
+    # ✅ ONLY VALID INLINE
+    inlines = [MeetingInviteeInline]
 
-#     readonly_fields = ("meeting_id", "passcode", "meeting_url", "created_at")
+    readonly_fields = ("meeting_id", "passcode", "meeting_url", "created_at")
 
-#     ordering = ("-created_at",)
+    ordering = ("-created_at",)
 
 
 # # ==============================
@@ -65,11 +64,11 @@
 # # ==============================
 # # 🎥 RECORDINGS
 # # ==============================
-# @admin.register(MeetingRecording)
-# class MeetingRecordingAdmin(admin.ModelAdmin):
-#     list_display = ("meeting", "recorded_at")
-#     search_fields = ("meeting__title",)
-#     ordering = ("-recorded_at",)
+@admin.register(MeetingRecording)
+class MeetingRecordingAdmin(admin.ModelAdmin):
+    list_display = ("meeting", "recorded_at")
+    search_fields = ("meeting__title",)
+    ordering = ("-recorded_at",)
 
 
 # # ==============================

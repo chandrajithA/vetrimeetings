@@ -77,10 +77,21 @@ class MeetingInvitee(models.Model):
 class MeetingRecording(models.Model):
     meeting = models.ForeignKey('Meeting', on_delete=models.CASCADE, related_name='recordings')
     file    = models.FileField(upload_to='recordings/')
+    thumbnail   = models.ImageField(upload_to='recording_thumbs/', blank=True, null=True)
+    duration_seconds = models.PositiveIntegerField(default=0)   # 
     recorded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Recording for {self.meeting} at {self.recorded_at}"
+    
+    @property
+    def duration_display(self):
+        s = self.duration_seconds
+        h, rem = divmod(s, 3600)
+        m, sec = divmod(rem, 60)
+        if h:
+            return f"{h}h {m:02d}m {sec:02d}s"
+        return f"{m:02d}:{sec:02d}"
     
     
 class MeetingChat(models.Model):

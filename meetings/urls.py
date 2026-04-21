@@ -1,3 +1,4 @@
+from django import views
 from django.urls import path
 from .views import *
 
@@ -24,6 +25,9 @@ urlpatterns = [
     path('meeting/all-scheduled/', all_scheduled_meetings, name='all_scheduled_meetings'),
     path('meeting/edit/<int:meeting_id>/', edit_meeting, name='edit_meeting'),
     path('meeting/delete/<int:meeting_id>/', delete_meeting, name='delete_meeting'),
+    
+    path('recordings/', recordings_hub, name='recordings_hub'),
+    path('recordings/delete/<int:recording_id>/', delete_recording, name='delete_recording'),
     
     # Chat page
     path('chat/', chat_page, name='chat_page'),

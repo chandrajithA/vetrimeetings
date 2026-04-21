@@ -39,6 +39,8 @@ let chatOpen    = false;
 let participantStatuses = {};
 let meetingEndedByHost  = false;
 
+let _recordingStartTime = null;
+
 
 /* ── Helper: wipe all prejoin keys so preview always re-asks next time ── */
 function _clearPrejoinStorage() {
@@ -408,13 +410,14 @@ function attachRoomEvents() {
     });
 
     room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
-        if (pub.source === Track.Source.ScreenShare) {
-            screenShareEnabled = false;
-            document.getElementById("screenShareBtn")?.classList.remove("active");
-            setBtnIcon("screenShareBtnImg", true);
-            if (activeScreenShareIdentity) _destroyScreenShare();
-        }
-    });
+    if (pub.source === Track.Source.ScreenShare) {
+        screenShareEnabled = false;
+        document.getElementById("screenShareBtn")?.classList.remove("active");
+        setBtnIcon("screenShareBtnImg", true);
+        hideScreenShareBanner();               // ← also hide when browser stops it
+        if (activeScreenShareIdentity) _destroyScreenShare();
+    }
+});
 
     room.on(RoomEvent.TrackMuted, (pub, participant) => {
         const tile    = document.getElementById("tile-" + participant.identity);
@@ -870,6 +873,27 @@ function _broadcastAudioMuteState(isOn) {
 // 🖥️  SCREEN SHARE
 //////////////////////////////////////////////////////
 
+function showScreenShareBanner() {
+    let b = document.getElementById("screenShareBanner");
+    if (!b) {
+        b = document.createElement("div");
+        b.id = "screenShareBanner";
+        b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(30,80,200,0.92);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;display:flex;align-items:center;gap:12px;backdrop-filter:blur(4px);cursor:default;box-shadow:0 4px 20px rgba(0,0,80,0.3)";
+        document.body.appendChild(b);
+    }
+    b.innerHTML = `
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#60aaff;animation:recPulse 1s infinite"></span>
+        You are sharing your screen
+        <button onclick="toggleScreenShare()" style="background:rgba(255,255,255,0.22);border:none;color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;">Stop sharing</button>
+    `;
+    b.style.display = "flex";
+}
+
+function hideScreenShareBanner() {
+    const b = document.getElementById("screenShareBanner");
+    if (b) b.style.display = "none";
+}
+
 async function toggleScreenShare() {
     if (!room) return;
     if (!IS_HOST && /iPhone|Android.*Mobile/i.test(navigator.userAgent) && !screenShareEnabled) {
@@ -879,14 +903,20 @@ async function toggleScreenShare() {
     try {
         if (!screenShareEnabled) {
             await room.localParticipant.setScreenShareEnabled(true);
+            screenShareEnabled = true;
+            btn?.classList.add("active");
+            setBtnIcon("screenShareBtnImg", false);
+            showScreenShareBanner();           // ← show in-app stop banner
         } else {
             await room.localParticipant.setScreenShareEnabled(false);
             screenShareEnabled = false;
             btn?.classList.remove("active");
             setBtnIcon("screenShareBtnImg", true);
+            hideScreenShareBanner();           // ← hide banner
         }
     } catch(e) {
         screenShareEnabled = false; btn?.classList.remove("active"); setBtnIcon("screenShareBtnImg", true);
+        hideScreenShareBanner();
         const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
         showStatus(isMobile ? "Screen share not supported on this device/browser." : "Screen share cancelled or denied.");
         setTimeout(hideStatus, 2500);
@@ -896,6 +926,8 @@ async function toggleScreenShare() {
 //////////////////////////////////////////////////////
 // ⏺️  RECORDING
 //////////////////////////////////////////////////////
+
+
 
 async function toggleRecording() {
     const btn      = document.getElementById("recordBtn");
@@ -926,10 +958,16 @@ async function toggleRecording() {
             mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
             mediaRecorder.onstop = async () => {
+                const durationSeconds = _recordingStartTime
+                    ? Math.round((Date.now() - _recordingStartTime) / 1000)
+                    : 0;
+                _recordingStartTime = null;
+
                 const blob = new Blob(recordedChunks, { type: "video/webm" });
                 const fd   = new FormData();
                 fd.append("recording", blob, `meeting-${ROOM_NAME}-${Date.now()}.webm`);
                 fd.append("room_name", ROOM_NAME);
+                fd.append("duration_seconds", durationSeconds);
                 showStatus("⏫ Uploading recording…");
                 try {
                     const res  = await fetch("/meeting/save-recording/", { method: "POST", headers: { "X-CSRFToken": getCookie("csrftoken") }, body: fd });
@@ -940,17 +978,20 @@ async function toggleRecording() {
                 recordedChunks = [];
             };
             mediaRecorder.start(1000);
+            _recordingStartTime = Date.now();
             isRecording = true; btn?.classList.add("active"); setBtnIcon("recordBtnImg", false);
             showRecordingBanner("You"); _broadcastRecordingState(true);
             if (!isMobile) { showStatus("🔴 Recording started…"); setTimeout(hideStatus, 2000); }
         } catch(e) {
             console.error("Recording failed:", e);
+            _recordingStartTime = null;
             showStatus("Recording cancelled or not supported."); setTimeout(hideStatus, 2500);
         }
     } else {
         mediaRecorder?.stop(); mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
         isRecording = false; btn?.classList.remove("active"); setBtnIcon("recordBtnImg", true);
         hideRecordingBanner(); _broadcastRecordingState(false);
+        // _recordingStartTime is cleared inside onstop
     }
 }
 
@@ -1035,25 +1076,67 @@ function _onChatClosed() { chatOpen = false; }
 //////////////////////////////////////////////////////
 
 async function leaveMeeting() {
-    if (isRecording) toggleRecording();
-    _clearPrejoinStorage();   // ← always clean up before navigating away
+    if (isRecording) {
+        _showMeetingEndedToast("Saving recording… please wait.");
+
+        await new Promise((resolve) => {
+            const originalOnStop = mediaRecorder.onstop;
+            mediaRecorder.onstop = async (e) => {
+                await originalOnStop(e);
+                resolve();
+            };
+            mediaRecorder.stop();
+            mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
+            isRecording = false;
+            document.getElementById("recordBtn")?.classList.remove("active");
+            setBtnIcon("recordBtnImg", true);
+            hideRecordingBanner();
+            _broadcastRecordingState(false);
+        });
+    }
+
+    _clearPrejoinStorage();
     if (room) await room.disconnect();
     window.location.href = "/";
 }
 
 async function endMeeting() {
     if (!IS_HOST || !room) return;
-    if (isRecording) toggleRecording();
 
-    // Stop ALL local hardware immediately
+    // If recording is active, stop it and wait for upload before ending
+    if (isRecording) {
+        _showMeetingEndedToast("Saving recording… please wait.");
+
+        await new Promise((resolve) => {
+            // Patch onstop to resolve after upload completes
+            const originalOnStop = mediaRecorder.onstop;
+            mediaRecorder.onstop = async (e) => {
+                await originalOnStop(e);   // runs upload logic + showStatus
+                resolve();
+            };
+
+            // Stop the recorder — triggers onstop above
+            mediaRecorder.stop();
+            mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
+            isRecording = false;
+            document.getElementById("recordBtn")?.classList.remove("active");
+            setBtnIcon("recordBtnImg", true);
+            hideRecordingBanner();
+            _broadcastRecordingState(false);
+        });
+    }
+
+    // Now safe to end — recording is saved
+    _showMeetingEndedToast("Ending meeting…");
+
+    // Stop ALL local hardware
     room.localParticipant.trackPublications.forEach(pub => {
         const mst = pub.track?.mediaStreamTrack;
         if (mst) mst.stop();
     });
 
     meetingEndedByHost = true;
-    _clearPrejoinStorage();   // ← clean up for host too
-    _showMeetingEndedToast("Ending meeting…");
+    _clearPrejoinStorage();
 
     fetch(`/meeting/end/${ROOM_NAME}/`, {
         method: "POST",
