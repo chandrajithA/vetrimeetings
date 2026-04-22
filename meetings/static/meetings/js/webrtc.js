@@ -41,6 +41,12 @@ let meetingEndedByHost  = false;
 
 let _recordingStartTime = null;
 
+let transcriptLines    = [];
+let transcriptActive   = false;
+let transcriptStartTime = null;
+let _recognition       = null;
+let _recognitionRunning = false;
+
 
 /* ── Helper: wipe all prejoin keys so preview always re-asks next time ── */
 function _clearPrejoinStorage() {
@@ -161,6 +167,11 @@ async function initRoom(opts = {}) {
         addParticipant(local.identity);
         addParticipantTile(local, true);
         _setParticipantStatus(local.identity, local.name || displayName || "You", videoEnabled, audioEnabled, true);
+
+        const transcriptStarted = startTranscript();
+        if (!transcriptStarted) {
+            console.warn("Transcript unavailable — use Chrome or Edge for transcription.");
+        }
 
         async function _publishFromMediaTrack(mediaTrack, kind) {
             try {
@@ -878,7 +889,7 @@ function showScreenShareBanner() {
     if (!b) {
         b = document.createElement("div");
         b.id = "screenShareBanner";
-        b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(30,80,200,0.92);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;display:flex;align-items:center;gap:12px;backdrop-filter:blur(4px);cursor:default;box-shadow:0 4px 20px rgba(0,0,80,0.3)";
+        b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(30,80,200,0.92);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;display:flex;align-items:center;gap:12px;backdrop-filter:blur(4px);cursor:default;box-shadow:0 4px 20px rgba(0,0,80,0.3)";
         document.body.appendChild(b);
     }
     b.innerHTML = `
@@ -1003,7 +1014,7 @@ async function _broadcastRecordingState(started) {
 
 function showRecordingBanner(r) {
     let b = document.getElementById("recordingBanner");
-    if (!b) { b = document.createElement("div"); b.id = "recordingBanner"; b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(180,0,0,0.88);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);pointer-events:none"; document.body.appendChild(b); }
+    if (!b) { b = document.createElement("div"); b.id = "recordingBanner"; b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(180,0,0,0.88);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);pointer-events:none"; document.body.appendChild(b); }
     b.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3333;animation:recPulse 1s infinite"></span>${escapeHtml(r)} is recording this meeting`;
     b.style.display = "flex";
 }
@@ -1076,15 +1087,13 @@ function _onChatClosed() { chatOpen = false; }
 //////////////////////////////////////////////////////
 
 async function leaveMeeting() {
+    stopTranscript();
+
     if (isRecording) {
         _showMeetingEndedToast("Saving recording… please wait.");
-
         await new Promise((resolve) => {
             const originalOnStop = mediaRecorder.onstop;
-            mediaRecorder.onstop = async (e) => {
-                await originalOnStop(e);
-                resolve();
-            };
+            mediaRecorder.onstop = async (e) => { await originalOnStop(e); resolve(); };
             mediaRecorder.stop();
             mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
             isRecording = false;
@@ -1095,6 +1104,7 @@ async function leaveMeeting() {
         });
     }
 
+    await saveTranscript();   // ← save transcript before leaving
     _clearPrejoinStorage();
     if (room) await room.disconnect();
     window.location.href = "/";
@@ -1103,19 +1113,13 @@ async function leaveMeeting() {
 async function endMeeting() {
     if (!IS_HOST || !room) return;
 
-    // If recording is active, stop it and wait for upload before ending
+    stopTranscript();   // ← stop recognition immediately
+
     if (isRecording) {
         _showMeetingEndedToast("Saving recording… please wait.");
-
         await new Promise((resolve) => {
-            // Patch onstop to resolve after upload completes
             const originalOnStop = mediaRecorder.onstop;
-            mediaRecorder.onstop = async (e) => {
-                await originalOnStop(e);   // runs upload logic + showStatus
-                resolve();
-            };
-
-            // Stop the recorder — triggers onstop above
+            mediaRecorder.onstop = async (e) => { await originalOnStop(e); resolve(); };
             mediaRecorder.stop();
             mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
             isRecording = false;
@@ -1126,10 +1130,11 @@ async function endMeeting() {
         });
     }
 
-    // Now safe to end — recording is saved
+    _showMeetingEndedToast("Saving transcript…");
+    await saveTranscript();   // ← save transcript before ending
+
     _showMeetingEndedToast("Ending meeting…");
 
-    // Stop ALL local hardware
     room.localParticipant.trackPublications.forEach(pub => {
         const mst = pub.track?.mediaStreamTrack;
         if (mst) mst.stop();
@@ -1150,6 +1155,134 @@ async function endMeeting() {
 async function muteAll() {
     if (!IS_HOST || !room) return;
     await room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "mute_all" })), { reliable: true });
+}
+
+
+//////////////////////////////////////////////////////
+// 📝  TRANSCRIPT (Web Speech API)
+//////////////////////////////////////////////////////
+
+function _getDisplayName() {
+    return room?.localParticipant?.name || "Me";
+}
+
+function startTranscript() {
+    // Skip on mobile — triggers repeated browser mic permission popups
+    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+        return false;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        console.warn("SpeechRecognition not supported in this browser.");
+        return false;
+    }
+    if (transcriptActive) return true;
+
+    transcriptLines     = [];
+    transcriptActive    = true;
+    transcriptStartTime = Date.now();
+
+    _recognition = new SR();
+    _recognition.continuous   = true;
+    _recognition.interimResults = false;
+    _recognition.lang         = 'en-US';
+    _recognitionRunning        = true;
+
+    _recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                const text      = event.results[i][0].transcript.trim();
+                const elapsed   = Math.floor((Date.now() - transcriptStartTime) / 1000);
+                const h         = Math.floor(elapsed / 3600);
+                const m         = Math.floor((elapsed % 3600) / 60);
+                const s         = elapsed % 60;
+                const timestamp = h
+                    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+                    : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                const name = _getDisplayName();
+                transcriptLines.push(`[${timestamp}] ${name}: ${text}`);
+            }
+        }
+    };
+
+    _recognition.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
+        console.warn("SpeechRecognition error:", e.error);
+    };
+
+    // Auto-restart if it stops unexpectedly (browser stops after ~60s silence)
+    _recognition.onend = () => {
+        if (transcriptActive && _recognitionRunning && !(/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))) {
+            try { _recognition.start(); } catch(e) {}
+        }
+    };
+
+    try {
+        _recognition.start();
+        console.log("Transcript started.");
+        return true;
+    } catch(e) {
+        console.warn("Could not start SpeechRecognition:", e);
+        transcriptActive = false;
+        return false;
+    }
+}
+
+function stopTranscript() {
+    transcriptActive    = false;
+    _recognitionRunning = false;
+    if (_recognition) {
+        try { _recognition.stop(); } catch(e) {}
+        _recognition = null;
+    }
+}
+
+async function saveTranscript() {
+    if (!transcriptLines.length) return;
+
+    const durationSeconds = transcriptStartTime
+        ? Math.round((Date.now() - transcriptStartTime) / 1000)
+        : 0;
+
+    // Build transcript text file
+    const header  = `Meeting: ${ROOM_NAME}\nDate: ${new Date().toLocaleString()}\nDuration: ${_formatDuration(durationSeconds)}\n${'─'.repeat(60)}\n\n`;
+    const body    = transcriptLines.join('\n');
+    const content = header + body;
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const fd   = new FormData();
+    fd.append('transcript', blob, `transcript-${ROOM_NAME}-${Date.now()}.txt`);
+    fd.append('room_name',  ROOM_NAME);
+    fd.append('duration_seconds', durationSeconds);
+
+    try {
+        showStatus("📝 Saving transcript…");
+        const res  = await fetch('/meeting/save-transcript/', {
+            method:  'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body:    fd,
+        });
+        const data = await res.json();
+        if (data.url) {
+            showStatusHTML(`✅ Transcript saved! <a href="${data.url}" target="_blank" rel="noopener" style="color:#7df;text-decoration:underline;">▶ View</a>`);
+        } else {
+            showStatus("❌ Transcript save failed: " + (data.error || "Unknown"));
+        }
+    } catch(e) {
+        showStatus("❌ Transcript upload error: " + e.message);
+    }
+
+    transcriptLines     = [];
+    transcriptStartTime = null;
+}
+
+function _formatDuration(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return h
+        ? `${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`
+        : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
 //////////////////////////////////////////////////////

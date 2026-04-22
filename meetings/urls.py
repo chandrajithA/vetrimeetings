@@ -29,6 +29,10 @@ urlpatterns = [
     path('recordings/', recordings_hub, name='recordings_hub'),
     path('recordings/delete/<int:recording_id>/', delete_recording, name='delete_recording'),
     
+    path('transcripts/', transcripts_hub, name='transcripts_hub'),
+    path('transcripts/delete/<int:transcript_id>/', delete_transcript, name='delete_transcript'),
+    path('meeting/save-transcript/', save_transcript, name='save_transcript'),
+    
     # Chat page
     path('chat/', chat_page, name='chat_page'),
 

@@ -19,6 +19,8 @@ import threading
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.hashers import check_password
+from django.http import HttpResponse
+import requests
 
 
 
@@ -1088,3 +1090,48 @@ def settings_page(request):
     return render(request, "meetings/settings.html", {
         "profile_image_url": profile_image_url,
     })
+    
+    
+    
+@login_required
+@require_POST
+def save_transcript(request):
+    file      = request.FILES.get('transcript')
+    room_name = request.POST.get('room_name')
+    duration  = int(request.POST.get('duration_seconds', 0))
+    if not file or not room_name:
+        return JsonResponse({'error': 'Missing data'}, status=400)
+    try:
+        meeting = Meeting.objects.get(room_name=room_name)
+        transcript = MeetingTranscript.objects.create(
+            meeting=meeting, file=file, duration_seconds=duration
+        )
+        return JsonResponse({'url': transcript.file.url, 'id': transcript.id})
+    except Meeting.DoesNotExist:
+        return JsonResponse({'error': 'Meeting not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@require_POST
+def delete_transcript(request, transcript_id):
+    try:
+        t = get_object_or_404(MeetingTranscript, id=transcript_id, meeting__host=request.user)
+        if t.file:
+            try:
+                t.file.delete(save=False)
+            except Exception as e:
+                print(f"Transcript file delete warning: {e}")
+        t.delete()
+        return JsonResponse({'status': 'deleted'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@login_required
+def transcripts_hub(request):
+    transcripts = MeetingTranscript.objects.filter(
+        meeting__host=request.user
+    ).select_related('meeting').order_by('-recorded_at')
+    return render(request, 'meetings/transcripts_hub.html', {'transcripts': transcripts})

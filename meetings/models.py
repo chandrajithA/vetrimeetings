@@ -154,3 +154,23 @@ class DirectChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.sender} @ {self.sent_at:%H:%M}: {self.text[:40]}"
+    
+    
+    
+class MeetingTranscript(models.Model):
+    meeting     = models.ForeignKey('Meeting', on_delete=models.CASCADE, related_name='transcripts')
+    file        = models.FileField(upload_to='transcripts/')
+    duration_seconds = models.PositiveIntegerField(default=0)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Transcript for {self.meeting} at {self.recorded_at}"
+
+    @property
+    def duration_display(self):
+        s = self.duration_seconds
+        h, rem = divmod(s, 3600)
+        m, sec = divmod(rem, 60)
+        if h:
+            return f"{h}h {m:02d}m {sec:02d}s"
+        return f"{m:02d}:{sec:02d}"
