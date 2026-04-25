@@ -27,6 +27,41 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   height: 100dvh; overflow: hidden;
 }
 
+@keyframes admitBtnIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+    @keyframes dotPulse { 0%,100%{opacity:0.8;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+    .admit-row {
+        display:flex; align-items:center; gap:10px;
+        padding:10px 12px; border-radius:10px;
+        border:1px solid rgba(255,255,255,0.06);
+        background:rgba(255,255,255,0.03);
+        margin-bottom:6px;
+        animation: admitRowIn 0.25s ease both;
+    }
+    @keyframes admitRowIn { from{opacity:0;transform:translateX(8px)} to{opacity:1;transform:none} }
+    .admit-avatar {
+        width:34px; height:34px; border-radius:50%;
+        background:linear-gradient(135deg,#4f8ef7,#6c63ff);
+        display:flex; align-items:center; justify-content:center;
+        font-size:13px; font-weight:600; color:#fff; flex-shrink:0;
+    }
+    .admit-name { flex:1; font-size:13px; color:#e8eaf0; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .admit-accept {
+        padding:5px 12px; border-radius:7px; border:none;
+        background:rgba(62,207,142,0.15); color:#3ecf8e;
+        font-size:12px; font-weight:600; cursor:pointer;
+        border:1px solid rgba(62,207,142,0.3);
+        transition:all 0.15s;
+    }
+    .admit-accept:hover { background:rgba(62,207,142,0.25); }
+    .admit-deny {
+        padding:5px 10px; border-radius:7px; border:none;
+        background:rgba(224,85,85,0.1); color:#e88;
+        font-size:12px; font-weight:600; cursor:pointer;
+        border:1px solid rgba(224,85,85,0.25);
+        transition:all 0.15s;
+    }
+    .admit-deny:hover { background:rgba(224,85,85,0.2); }
+
 /* ── STATUS BAR ── */
 .status-bar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;

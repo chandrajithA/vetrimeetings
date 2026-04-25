@@ -125,14 +125,8 @@
                     <span class="field-hint">8-character code (letters &amp; numbers)</span>
                 </div>
 
-                <div class="join-field">
-                    <label for="username">Your Name</label>
-                    <input type="text" id="username" placeholder="Enter your name"
-                           {% if user.is_authenticated %} value="{{ user.name }}" {% endif %} required>
-                </div>
-
                 <button type="button" class="join-btn" id="joinNextBtn" onclick="joinGoToPreview()">
-                    <span id="joinNextLabel">Continue</span>
+                    <span id="joinNextLabel">Join</span>
                     <span id="joinNextSpinner" class="spinner hidden"></span>
                 </button>
             </div>
@@ -210,6 +204,21 @@
                     <label for="newHostName">Your Name</label>
                     <input type="text" id="newHostName" placeholder="Enter your name"
                         value="{{ request.user.name|default:'' }}" maxlength="60" autocomplete="off">
+                </div>
+
+                <div class="join-field toggle-row" style="margin-top:14px;">
+                    <div style="display:flex;flex-direction:column;gap:2px;">
+                        <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
+                            Require join permission
+                        </label>
+                        <span style="font-size:12px;color:var(--color-text-secondary,#8b90a0);">
+                            Participants will wait for your approval before entering
+                        </span>
+                    </div>
+                    <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                        <input type="checkbox" id="newRequireAdmission">
+                        <span class="sch-slider"></span>
+                    </label>
                 </div>
 
                 <button type="button" class="join-btn" id="newNextBtn" onclick="newGoToPreview()">
@@ -324,6 +333,21 @@
             <span class="field-hint">Leave blank for no end date</span>
         </div>
 
+        <div class="join-field toggle-row" style="margin-top:4px;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
+                    Require join permission
+                </label>
+                <span style="font-size:12px;color:var(--color-text-secondary,#8b90a0);">
+                    Participants will wait for your approval before entering
+                </span>
+            </div>
+            <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="schRequireAdmission">
+                <span class="sch-slider"></span>
+            </label>
+        </div>
+
         <div class="join-field">
             <label>Add Invitees</label>
             <div class="invitee-input-row">
@@ -414,6 +438,21 @@
                 <button type="button" class="invitee-add-btn" onclick="addEditInvitee()">Add</button>
             </div>
             <div id="editInviteeList" class="invitee-list"></div>
+        </div>
+
+        <div class="join-field toggle-row" style="margin-top:4px;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
+                    Require join permission
+                </label>
+                <span style="font-size:12px;color:var(--color-text-secondary,#8b90a0);">
+                    Participants will wait for your approval before entering
+                </span>
+            </div>
+            <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="editRequireAdmission">
+                <span class="sch-slider"></span>
+            </label>
         </div>
 
         <button type="button" class="join-btn" id="editSubmitBtn" onclick="submitEdit()">
@@ -979,6 +1018,7 @@ function openEditModal(m) {
     document.getElementById('editTitle').value     = m.title;
     document.getElementById('editRepeat').value    = m.repeat || 'none';
     document.getElementById('editAllDay').checked  = m.is_all_day;
+    document.getElementById('editRequireAdmission').checked = m.require_admission || false;
 
     const modal = document.getElementById('editMeetingModal');
     modal.style.display = 'flex'; modal.style.visibility = 'visible'; modal.style.opacity = '1';
@@ -991,6 +1031,10 @@ function openEditModal(m) {
     document.getElementById('editSuccess').classList.add('hidden');
 
     _initEditFlatpickrs();
+
+    // Temporarily clear minDate so DB values (possibly past) can be loaded
+    if (_fpEditStartDate) _fpEditStartDate.set('minDate', null);
+    if (_fpEditRepeatEnd) _fpEditRepeatEnd.set('minDate', null);
 
     // ✅ Always use original saved DB dates, not the date-adjusted display values
     const editStart = m.original_start || m.start;
@@ -1036,8 +1080,13 @@ function openEditModal(m) {
         if (m.repeat_end_date && _fpEditRepeatEnd) {
             _fpEditRepeatEnd.set('minDate', null);
             _fpEditRepeatEnd.setDate(m.repeat_end_date, true);
-            if (startDate) _fpEditRepeatEnd.set('minDate', startDate);
         }
+
+        // After populating all values, enforce "today or later" for user interaction
+        if (_fpEditStartDate) _fpEditStartDate.set('minDate', 'today');
+        if (_fpEditRepeatEnd) _fpEditRepeatEnd.set('minDate', 'today');
+        // Repeat-end must also be after start date
+        if (_fpEditRepeatEnd && startDate) _fpEditRepeatEnd.set('minDate', startDate > new Date() ? startDate : new Date());
     }, 50);
 }
 
@@ -1122,7 +1171,7 @@ async function submitEdit() {
         const res = await fetch(`/meeting/edit/${id}/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({ title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd, invitees: editInvitees }),
+            body: JSON.stringify({ title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd, invitees: editInvitees, require_admission: document.getElementById('editRequireAdmission')?.checked || false }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to update');
@@ -1283,51 +1332,47 @@ async function _startPreview(videoElId, camOffElId, permDeniedElId, avatarElId, 
    JOIN MODAL
    ─────────────────────────────────────────────────────────────── */
 function closeJoinModal() {
-    const nameField = document.getElementById("username");
-    if (nameField.value.trim()) savedUsername = nameField.value.trim();
     document.getElementById("joinModal").style.display = "none";
-    _stopStream(joinStream); joinStream = null;
-    document.getElementById("joinPreviewVideo").srcObject = null;
     document.getElementById("joinStep1").classList.remove("hidden");
-    document.getElementById("joinStep2").classList.add("hidden");
     document.getElementById("joinError").classList.add("hidden");
-    joinPermDenied = false; joinMicOn = true; joinCamOn = true;
-    _syncAvBtn("joinMicBtn","joinMicIcon","joinMicLabel", true, "Mic On","Mic Off");
-    _syncAvBtn("joinCamBtn","joinCamIcon","joinCamLabel", true, "Cam On","Cam Off");
 }
 
 async function joinGoToPreview() {
     const meetingId = document.getElementById("room_id").value.replace(/\s/g,"").trim();
     const passcode  = document.getElementById("password").value.trim().toUpperCase();
-    const username  = document.getElementById("username").value.trim();
     const errorEl   = document.getElementById("joinError");
-    if (meetingId.length !== 12) { errorEl.textContent = "Please enter a valid 12-digit Meeting ID."; errorEl.classList.remove("hidden"); return; }
-    if (!username)               { errorEl.textContent = "Please enter your name.";                   errorEl.classList.remove("hidden"); return; }
+
+    if (meetingId.length !== 12) {
+        errorEl.textContent = "Please enter a valid 12-digit Meeting ID.";
+        errorEl.classList.remove("hidden"); return;
+    }
     errorEl.classList.add("hidden");
-    const btn = document.getElementById("joinNextBtn"), label = document.getElementById("joinNextLabel"), spinner = document.getElementById("joinNextSpinner");
+
+    const btn = document.getElementById("joinNextBtn"),
+          label = document.getElementById("joinNextLabel"),
+          spinner = document.getElementById("joinNextSpinner");
     label.textContent = "Verifying…"; spinner.classList.remove("hidden"); btn.disabled = true;
+
     try {
-        const res  = await fetch("/meeting/join/", {
+        const res = await fetch("/meeting/join/", {
             method: "POST",
             headers: { "Content-Type":"application/json", "X-CSRFToken": getCsrf() },
             body: JSON.stringify({ meeting_id: meetingId, passcode }),
         });
         if (res.redirected) { window.location.href = res.url; return; }
         const data = await res.json();
-        if (!res.ok || !data.redirect) { errorEl.textContent = data.error || "Could not join meeting."; errorEl.classList.remove("hidden"); return; }
-        joinRoomName = data.redirect;
-        savedUsername = username;
-        sessionStorage.setItem("join_display_name", username);
-        document.getElementById("joinStep1").classList.add("hidden");
-        document.getElementById("joinStep2").classList.remove("hidden");
-        const avatarText = username.split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2) || "?";
-        const result = await _startPreview("joinPreviewVideo","joinPreviewCamOff","joinPreviewPermDenied","joinPreviewAvatar", joinCamOn, joinMicOn, avatarText);
-        joinStream = result.stream; joinPermDenied = result.permDenied;
-        if (joinPermDenied) { joinMicOn = false; joinCamOn = false; document.getElementById("joinMicBtn").classList.add("pj-disabled"); document.getElementById("joinCamBtn").classList.add("pj-disabled"); }
-        _syncAvBtn("joinMicBtn","joinMicIcon","joinMicLabel", joinMicOn, "Mic On","Mic Off");
-        _syncAvBtn("joinCamBtn","joinCamIcon","joinCamLabel", joinCamOn, "Cam On","Cam Off");
-    } catch (err) { errorEl.textContent = "Network error. Please try again."; errorEl.classList.remove("hidden"); }
-    finally { label.textContent = "Continue"; spinner.classList.add("hidden"); btn.disabled = false; }
+        if (!res.ok || !data.redirect) {
+            errorEl.textContent = data.error || "Could not join meeting.";
+            errorEl.classList.remove("hidden"); return;
+        }
+        // Go directly to room — the room page's lobby will handle name + AV preview
+        window.location.href = data.redirect;
+    } catch (err) {
+        errorEl.textContent = "Network error. Please try again.";
+        errorEl.classList.remove("hidden");
+    } finally {
+        label.textContent = "Join"; spinner.classList.add("hidden"); btn.disabled = false;
+    }
 }
 
 function joinBackToDetails() {
@@ -1384,6 +1429,8 @@ function closeNewMeetingDialog() {
     // ✅ Reset name to DB value on close
     const nameInput = document.getElementById("newHostName");
     if (nameInput) nameInput.value = nameInput.defaultValue;
+    const admissionCheck = document.getElementById("newRequireAdmission");
+    if (admissionCheck) admissionCheck.checked = false;
 }
 
 async function newGoToPreview() {
@@ -1435,24 +1482,36 @@ async function toggleNewCam() {
 }
 
 async function startMeetingFinal() {
-    const title    = document.getElementById("meetingTitle").value.trim() || "Quick Meeting";
-    // ✅ Use the name from step 1
-    const hostName = document.getElementById("newHostName")?.value.trim() || "";
+    const title           = document.getElementById("meetingTitle").value.trim() || "Quick Meeting";
+    const hostName        = document.getElementById("newHostName")?.value.trim() || "";
+    const requireAdmission = document.getElementById("newRequireAdmission")?.checked || false;
 
-    const btn = document.getElementById("startFinalBtn"), label = document.getElementById("startFinalLabel"), spinner = document.getElementById("startFinalSpinner");
+    const btn = document.getElementById("startFinalBtn"),
+          label = document.getElementById("startFinalLabel"),
+          spinner = document.getElementById("startFinalSpinner");
     btn.disabled = true; label.textContent = "Starting…"; spinner.classList.remove("hidden");
     document.getElementById("newPreviewVideo").srcObject = null;
     if (newStream) newStream.getTracks().forEach(t => t.enabled = false);
+
     try {
-        const res = await fetch("/meeting/create/?title=" + encodeURIComponent(title), {
-            method: "POST", headers: { "X-CSRFToken": getCsrf() },
+        const res = await fetch("/meeting/create/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCsrf(),
+            },
+            // ← Send JSON body so server can read require_admission
+            body: JSON.stringify({
+                title,
+                require_admission: requireAdmission,
+            }),
         });
         if (res.redirected) { window.location.href = res.url; return; }
         const data = await res.json();
         if (!res.ok || !data.redirect) throw new Error(data.error || "Failed to create meeting");
+
         sessionStorage.setItem("prejoin_mic", newMicOn ? "1" : "0");
         sessionStorage.setItem("prejoin_cam", newCamOn ? "1" : "0");
-        // ✅ Store the custom name so webrtc.js passes it to /meeting/token/
         if (hostName) sessionStorage.setItem("join_display_name", hostName);
         window._prejoinStream = newStream; newStream = null;
         window.location.href = data.redirect;
@@ -1643,6 +1702,8 @@ function closeScheduleModal() {
     document.getElementById('scheduleError').classList.add('hidden');
     document.getElementById('scheduleSuccess').classList.add('hidden');
     if (_fpSchRepeatEnd) _fpSchRepeatEnd.clear();
+    const admissionCheck = document.getElementById("schRequireAdmission");
+    if (admissionCheck) admissionCheck.checked = false;
 }
 
 function toggleAllDay() {
@@ -1706,7 +1767,16 @@ async function submitSchedule() {
         const res = await fetch('/meeting/schedule/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({ title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd, invitees: schInvitees }),
+                body: JSON.stringify({
+                title,
+                start,
+                end,
+                all_day: allDay,
+                repeat,
+                repeat_end: repeatEnd,
+                invitees: schInvitees,
+                require_admission: document.getElementById('schRequireAdmission')?.checked || false,
+            }),
         });
         if (res.redirected) { window.location.href = res.url; return; }
         const data = await res.json();

@@ -15,20 +15,64 @@
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════
-     MAIN MEETING UI  (shown immediately — no lobby)
-     ══════════════════════════════════════════════════════ -->
 <div class="meeting-wrapper" id="meetingWrapper">
+
+    {% if is_host %}
+    <!-- Admit panel — auto-shows when someone knocks, auto-hides when queue is empty -->
+    <div id="admitPanel" style="
+        position:fixed; top:70px; right:16px; z-index:8000;
+        background:rgba(14,17,26,0.97); border:1px solid rgba(255,255,255,0.1);
+        border-radius:16px; padding:0; min-width:300px; max-width:340px;
+        box-shadow:0 16px 48px rgba(0,0,0,0.6);
+        display:none; flex-direction:column; overflow:hidden;
+        backdrop-filter:blur(16px);
+    ">
+        <div style="
+            padding:14px 18px; background:rgba(255,255,255,0.04);
+            border-bottom:1px solid rgba(255,255,255,0.07);
+            display:flex; align-items:center; justify-content:space-between;
+        ">
+            <span style="font-size:13px; font-weight:600; color:#e8eaf0;">
+                Waiting to Join
+                <span id="admitBadgeCount" style="
+                    display:inline-flex; align-items:center; justify-content:center;
+                    background:#4f8ef7; color:#fff; border-radius:100px;
+                    font-size:10px; font-weight:700; min-width:18px; height:18px;
+                    padding:0 5px; margin-left:6px;
+                ">0</span>
+            </span>
+            <button onclick="document.getElementById('admitPanel').style.display='none'"
+                style="background:none;border:none;color:#8b90a0;font-size:16px;cursor:pointer;line-height:1;">✕</button>
+        </div>
+        <div id="admitList" style="max-height:320px; overflow-y:auto; padding:8px;"></div>
+        <div style="padding:10px 14px; border-top:1px solid rgba(255,255,255,0.07); display:flex; gap:8px;">
+            <button onclick="admitAll()" style="
+                flex:1; padding:8px; border-radius:8px; border:none;
+                background:linear-gradient(135deg,#4f8ef7,#6c63ff); color:#fff;
+                font-size:12px; font-weight:600; cursor:pointer;
+            ">Admit All</button>
+            <button onclick="denyAll()" style="
+                flex:1; padding:8px; border-radius:8px;
+                border:1px solid rgba(224,85,85,0.3); background:rgba(224,85,85,0.08);
+                color:#e88; font-size:12px; font-weight:600; cursor:pointer;
+            ">Deny All</button>
+        </div>
+    </div>
+    {% endif %}
 
     <div id="statusBar" class="status-bar hidden"></div>
 
+    <!-- Header -->
     <div style="display:flex;align-items:center;gap:12px;position:relative;">
         <button class="meeting-title-btn" id="meetingInfoBtn" onclick="toggleMeetingInfo()" title="Meeting info">
             {{ meeting.title }}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:6px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:6px">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
         </button>
 
-        <!-- Meeting Info Panel -->
         <div id="meetingInfoPanel" class="meeting-info-panel hidden">
             <div class="mip-header">
                 <span class="mip-title">{{ meeting.title }}</span>
@@ -71,6 +115,7 @@
         </div>
     </div>
 
+    <!-- Video area -->
     <div class="video-area">
         <div class="video-pages">
             <div id="videoContainer" class="video-container layout-1"></div>
@@ -82,8 +127,8 @@
         </div>
     </div>
 
+    <!-- Controls -->
     <div class="controls">
-
         <button onclick="toggleAudio()" id="audioBtn" class="ctrl-btn" title="Mute/Unmute">
             <img id="audioBtnImg"
                  src="{% static 'meetings/images/audio-on.png' %}"
@@ -103,8 +148,6 @@
         <button onclick="flipCamera()" id="flipBtn" class="ctrl-btn" title="Flip camera" style="display:none">
             <img id="flipBtnImg"
                  src="{% static 'meetings/images/flip.png' %}"
-                 data-src-front="{% static 'meetings/images/flip.png' %}"
-                 data-src-back="{% static 'meetings/images/flip.png' %}"
                  alt="Flip" class="ctrl-icon">
         </button>
 
@@ -117,14 +160,12 @@
         </button>
 
         <button onclick="toggleChat()" id="chatBtn" class="ctrl-btn" title="Chat">
-            <img id="chatBtnImg"
-                 src="{% static 'meetings/images/chat-white.png' %}"
+            <img id="chatBtnImg" src="{% static 'meetings/images/chat-white.png' %}"
                  alt="Chat" class="ctrl-icon">
         </button>
 
         <button onclick="toggleParticipants()" id="participantsBtn" class="ctrl-btn" title="Participants">
-            <img id="participantsBtnImg"
-                 src="{% static 'meetings/images/participants.png' %}"
+            <img id="participantsBtnImg" src="{% static 'meetings/images/participants.png' %}"
                  alt="Participants" class="ctrl-icon">
         </button>
 
@@ -148,9 +189,9 @@
             <img src="{% static 'meetings/images/remove-button.png' %}" alt="Leave" class="ctrl-icon">
         </button>
         {% endif %}
-
     </div>
 
+    <!-- Chat sidebar -->
     <div id="chatSidebar" class="chat-sidebar hidden">
         <div class="chat-header">
             <span>Meeting Chat</span>
@@ -164,6 +205,7 @@
         </div>
     </div>
 
+    <!-- Participants sidebar -->
     <div id="participantsSidebar" class="participants-sidebar hidden">
         <div class="participants-header">
             <span>Participants (<span id="panelParticipantCount">0</span>)</span>
@@ -175,7 +217,7 @@
 </div>
 
 
-<!-- ══ PRE-JOIN LOBBY (shown for direct link joins) ══ -->
+<!-- ══ PRE-JOIN LOBBY (shown for direct room.html access without prejoin keys) ══ -->
 <div id="prejoinLobby" class="prejoin-overlay hidden">
     <div class="prejoin-box">
         <h2>Ready to join?</h2>
@@ -195,14 +237,14 @@
 
         <div class="av-toggles" style="margin-top:14px;">
             <button type="button" class="av-btn av-on" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
-                <img src="{% static 'meetings/images/audio-on-black.png' %}" id="lobbyMicIcon"
-                     data-on="{% static 'meetings/images/audio-on-black.png' %}"
+                <img src="{% static 'meetings/images/audio-on.png' %}" id="lobbyMicIcon"
+                     data-on="{% static 'meetings/images/audio-on.png' %}"
                      data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
                 <span id="lobbyMicLabel">Mic On</span>
             </button>
             <button type="button" class="av-btn av-on" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
-                <img src="{% static 'meetings/images/video-on-black.png' %}" id="lobbyCamIcon"
-                     data-on="{% static 'meetings/images/video-on-black.png' %}"
+                <img src="{% static 'meetings/images/video-on.png' %}" id="lobbyCamIcon"
+                     data-on="{% static 'meetings/images/video-on.png' %}"
                      data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
                 <span id="lobbyCamLabel">Cam On</span>
             </button>
@@ -219,22 +261,22 @@
             <span id="lobbyJoinSpinner" class="spinner hidden"></span>
         </button>
 
-        <button class="join-btn" id="lobbyCancelBtn" 
-                onclick="window.location.href='/'"
-                style="margin-top:10px; background: transparent; border: 0.5px solid rgba(255,255,255,0.2); color: var(--color-text-secondary);">
+        <button class="join-btn" onclick="window.location.href='/'"
+                style="margin-top:10px; background:transparent; border:0.5px solid rgba(255,255,255,0.2); color:var(--text-muted);">
             Cancel
         </button>
     </div>
 </div>
 
+
 <!-- ══════════════════════════════════════════════════════
      Django → JS globals
      ══════════════════════════════════════════════════════ -->
 <script>
-    const ROOM_NAME   = "{{ room_name }}";
-    const IS_HOST     = {{ is_host|yesno:"true,false" }};
-    const MEETING_URL = "{{ meeting_url }}";
-    const MEETING_CHAT_ID  = {{ chat_id|default:"null" }}; 
+    const ROOM_NAME      = "{{ room_name }}";
+    const IS_HOST        = {{ is_host|yesno:"true,false" }};
+    const MEETING_URL    = "{{ meeting_url }}";
+    const MEETING_CHAT_ID = {{ chat_id|default:"null" }};
 
     const ICONS = {
         micOn:  "{% static 'meetings/images/audio-on.png' %}",
@@ -253,16 +295,8 @@
 
 <script>
 /* ══════════════════════════════════════════════════════
-   Boot — read AV choices stored by dashboard preview
+   UI helpers
    ══════════════════════════════════════════════════════ */
-
-
-/* ══════════════════════════════════════════════════════
-   UI helpers (chat, participants, copy link, flip show)
-   ══════════════════════════════════════════════════════ */
-
-
-
 function toggleChat() {
     const pSidebar = document.getElementById("participantsSidebar");
     if (!pSidebar.classList.contains("hidden")) {
@@ -272,8 +306,8 @@ function toggleChat() {
     const sidebar  = document.getElementById("chatSidebar");
     const isHidden = sidebar.classList.toggle("hidden");
     document.getElementById("chatBtn")?.classList.toggle("active", !isHidden);
-    if (!isHidden) { if (typeof _onChatOpened  === "function") _onChatOpened(); }
-    else           { if (typeof _onChatClosed  === "function") _onChatClosed(); }
+    if (!isHidden) { if (typeof _onChatOpened === "function") _onChatOpened(); }
+    else           { if (typeof _onChatClosed === "function") _onChatClosed(); }
 }
 
 function toggleParticipants() {
@@ -292,9 +326,7 @@ function toggleParticipants() {
 function toggleMeetingInfo() {
     document.getElementById('meetingInfoPanel').classList.toggle('hidden');
 }
-
-// Close panel when clicking outside
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const panel = document.getElementById('meetingInfoPanel');
     const btn   = document.getElementById('meetingInfoBtn');
     if (panel && !panel.classList.contains('hidden')) {
@@ -305,18 +337,17 @@ document.addEventListener('click', function(e) {
 });
 
 function mipCopy(type) {
-    const url  = document.getElementById('mipUrl')?.textContent.trim() || '';
-    const rawId = document.getElementById('mipId')?.textContent.trim() || '';
-    const pc   = document.getElementById('mipPc')?.textContent.trim() || '';
+    const url   = document.getElementById('mipUrl')?.textContent.trim()  || '';
+    const rawId = document.getElementById('mipId')?.textContent.trim()   || '';
+    const pc    = document.getElementById('mipPc')?.textContent.trim()   || '';
     const fmtId = rawId.match(/.{1,4}/g)?.join(' ') ?? rawId;
 
-    let text = '';
-    let btnId = '';
-    if (type === 'url')     { text = url;    btnId = 'mipCopyUrl'; }
-    if (type === 'id')      { text = fmtId;  btnId = 'mipCopyId';  }
-    if (type === 'passcode'){ text = pc;     btnId = 'mipCopyPc';  }
+    let text = '', btnId = '';
+    if (type === 'url')      { text = url;    btnId = 'mipCopyUrl'; }
+    if (type === 'id')       { text = fmtId;  btnId = 'mipCopyId';  }
+    if (type === 'passcode') { text = pc;     btnId = 'mipCopyPc';  }
     if (type === 'all') {
-        text = `Meeting: {{ meeting.title }}\nInvite link: ${url}\nMeeting ID: ${fmtId}\nPasscode: ${pc}`;
+        text  = `Meeting: {{ meeting.title }}\nInvite link: ${url}\nMeeting ID: ${fmtId}\nPasscode: ${pc}`;
         btnId = 'mipCopyAll';
     }
 
@@ -341,35 +372,29 @@ document.addEventListener("click", () => {
     if (AC) { try { new AC().resume(); } catch(e) {} }
 }, { once: true });
 
-// Show flip button on mobile
 if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
     document.getElementById("flipBtn").style.display = "flex";
 }
 
+/* ══════════════════════════════════════════════════════
+   Boot — decide lobby vs prejoin-state path
+   ══════════════════════════════════════════════════════ */
 (function () {
-    /* ── Read and IMMEDIATELY delete prejoin keys ── */
     const micVal = sessionStorage.getItem("prejoin_mic");
     const camVal = sessionStorage.getItem("prejoin_cam");
 
-    // Always remove keys right away. If the page reloads for any reason,
-    // the values are gone and the lobby will be shown fresh.
     sessionStorage.removeItem("prejoin_mic");
     sessionStorage.removeItem("prejoin_cam");
     sessionStorage.removeItem("prejoin_stream");
 
-    const displayName = sessionStorage.getItem("join_display_name") || "";
-    // Don't remove join_display_name yet — initRoom needs it; webrtc.js removes it.
+    const displayName  = sessionStorage.getItem("join_display_name") || "";
+    const hasPrejoin   = micVal !== null;
 
-    const hasPrejoin = micVal !== null;
-
-    /* ══════════════════════════════════════════════════════
-       LOBBY — always shown when no prejoin state exists
-       (direct link, re-entry after leave, hard refresh)
-       ══════════════════════════════════════════════════════ */
+    /* ── No prejoin keys → show in-room lobby ── */
     if (!hasPrejoin) {
-        let lobbyMicOn     = true;
-        let lobbyCamOn     = true;
-        let lobbyStream    = null;
+        let lobbyMicOn      = true;
+        let lobbyCamOn      = true;
+        let lobbyStream     = null;
         let lobbyPermDenied = false;
 
         const lobby = document.getElementById("prejoinLobby");
@@ -386,7 +411,7 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             btn.classList.toggle("av-off", !isOn);
         }
 
-        window.lobbyOpenPermSettings = function(e) {
+        window.lobbyOpenPermSettings = function (e) {
             e.preventDefault();
             alert("To allow camera/microphone:\n1. Click the lock icon in the address bar.\n2. Set Camera and Microphone to Allow.\n3. Refresh the page.");
         };
@@ -400,11 +425,11 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             try {
                 lobbyStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: true
+                    audio: true,
                 });
                 lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
                 lobbyStream.getVideoTracks().forEach(t => t.enabled = lobbyCamOn);
-                if (lobbyCamOn && lobbyStream.getVideoTracks().length > 0) {
+                if (lobbyCamOn && lobbyStream.getVideoTracks().length) {
                     videoEl.srcObject = lobbyStream;
                     videoEl.style.transform = "scaleX(-1)";
                     camOffEl.classList.add("hidden");
@@ -412,7 +437,6 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
                     camOffEl.classList.remove("hidden");
                 }
             } catch (err) {
-                console.warn("Lobby preview error:", err.name);
                 if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
                     permDeniedEl.classList.remove("hidden");
                     lobbyPermDenied = true;
@@ -446,7 +470,7 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
                 camOffEl.classList.remove("hidden");
             } else {
                 camOffEl.classList.add("hidden");
-                if (lobbyStream && lobbyStream.getVideoTracks().length > 0) {
+                if (lobbyStream && lobbyStream.getVideoTracks().length) {
                     lobbyStream.getVideoTracks().forEach(t => t.enabled = true);
                     videoEl.srcObject = lobbyStream;
                     videoEl.style.transform = "scaleX(-1)";
@@ -454,7 +478,7 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
                     try {
                         const vs = await navigator.mediaDevices.getUserMedia({
                             video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-                            audio: false
+                            audio: false,
                         });
                         if (lobbyStream) lobbyStream.addTrack(vs.getVideoTracks()[0]);
                         else lobbyStream = vs;
@@ -479,10 +503,8 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             const spinner = document.getElementById("lobbyJoinSpinner");
             btn.disabled = true; label.textContent = "Joining…"; spinner.classList.remove("hidden");
 
-            // Store display name for webrtc.js to pass to token endpoint
             sessionStorage.setItem("join_display_name", name);
 
-            // Stop preview tracks — initRoom will use them via window._prejoinStream
             document.getElementById("lobbyVideo").srcObject = null;
             if (lobbyStream) lobbyStream.getTracks().forEach(t => t.enabled = false);
             window._prejoinStream = lobbyStream;
@@ -500,7 +522,6 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             window._prejoinStream = null;
         };
 
-        // Avatar initials from DB name (cosmetic only)
         const userName = "{{ request.user.name|default:'' }}";
         if (userName) {
             document.getElementById("lobbyAvatar").textContent =
@@ -508,56 +529,166 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
         }
 
         startLobbyPreview();
-        return;   // ← stop here; don't run the prejoin-state branch
+        return;
     }
 
-    /* ══════════════════════════════════════════════════════
-       PREJOIN STATE PATH — came from dashboard/join preview
-       Keys were already deleted above, so this runs at most once.
-       ══════════════════════════════════════════════════════ */
-    const startMicOn = micVal !== "0";
-    const startCamOn = camVal !== "0";
-
+    /* ── Has prejoin keys → go straight into room ── */
+    const startMicOn    = micVal !== "0";
+    const startCamOn    = camVal !== "0";
     const previewStream = window._prejoinStream || null;
     if (window._prejoinStream) window._prejoinStream = null;
 
     document.addEventListener("DOMContentLoaded", function () {
-        initRoom({
-            startMicOn,
-            startCamOn,
-            previewStream,
-            displayName,
-        });
+        initRoom({ startMicOn, startCamOn, previewStream, displayName });
     });
 })();
-
 </script>
 
 <script>
-// ── Bug 2 fix: deactivate meeting if host navigates away before meeting starts ──
+/* ══════════════════════════════════════════════════════
+   Deactivate beacon on host navigation before meeting starts
+   ══════════════════════════════════════════════════════ */
 const CSRF_TOKEN = "{{ csrf_token }}";
-
-// Track whether the host has genuinely "started" (connected to LiveKit)
 window._meetingFullyStarted = false;
-
-// Called by webrtc.js after successful room.connect()
-window._onMeetingFullyStarted = function() {
-    window._meetingFullyStarted = true;
-};
+window._onMeetingFullyStarted = function () { window._meetingFullyStarted = true; };
 
 {% if is_host %}
-// Send deactivate beacon on back/close/refresh ONLY if not fully started
-window.addEventListener('pagehide', function() {
+window.addEventListener('pagehide', function () {
     if (!window._meetingFullyStarted) {
         navigator.sendBeacon(
             '/meeting/deactivate/{{ room_name }}/',
             new Blob(
-                [JSON.stringify({csrfmiddlewaretoken: CSRF_TOKEN})],
-                {type: 'application/json'}
+                [JSON.stringify({ csrfmiddlewaretoken: CSRF_TOKEN })],
+                { type: 'application/json' }
             )
         );
     }
 });
+{% else %}
+window.addEventListener('pagehide', function () {
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+    navigator.sendBeacon('/meeting/knock-cancel/{{ room_name }}/', fd);
+});
+{% endif %}
+
+
+{% if is_host %}
+/* ══════════════════════════════════════════════════════
+   HOST — knock polling & admit/deny panel
+   ══════════════════════════════════════════════════════ */
+(function () {
+    const ROOM    = "{{ room_name }}";
+    const CSRF    = "{{ csrf_token }}";
+    const POLL_MS = 15000;   /* match waiting-page interval */
+
+    let _knocks = [];
+    let _pollT  = null;
+
+    function post(url) {
+        return fetch(url, {
+            method: "POST",
+            headers: { "X-CSRFToken": CSRF },
+        }).then(r => r.json());
+    }
+
+    function escapeHtml(t) {
+        return String(t)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    function renderKnocks(knocks) {
+        const list  = document.getElementById("admitList");
+        const badge = document.getElementById("admitBadgeCount");
+        const panel = document.getElementById("admitPanel");
+        if (!list || !panel) return;
+
+        badge.textContent = knocks.length;
+
+        if (knocks.length === 0) {
+            panel.style.display = "none";
+            list.innerHTML = "";
+            return;
+        }
+
+        /* Auto-show when someone knocks */
+        panel.style.display = "flex";
+
+        /* Reconcile: remove rows for people who left */
+        const incoming = new Set(knocks.map(k => String(k.user_id)));
+        list.querySelectorAll(".admit-row").forEach(r => {
+            if (!incoming.has(r.dataset.uid)) r.remove();
+        });
+
+        /* Add new rows */
+        const existing = new Set(
+            [...list.querySelectorAll(".admit-row")].map(r => r.dataset.uid)
+        );
+        knocks.forEach(k => {
+            if (existing.has(String(k.user_id))) return;
+            const initials = (k.display_name || "?")
+                .split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+            const row = document.createElement("div");
+            row.className   = "admit-row";
+            row.dataset.uid = String(k.user_id);
+            row.innerHTML = `
+                <div class="admit-avatar">${initials}</div>
+                <div class="admit-name">${escapeHtml(k.display_name)}</div>
+                <button class="admit-accept" onclick="admitUser(${k.user_id}, this)">Admit</button>
+                <button class="admit-deny"   onclick="denyUser(${k.user_id},  this)">Deny</button>
+            `;
+            list.appendChild(row);
+        });
+    }
+
+    async function pollKnocks() {
+        try {
+            const res  = await fetch(`/meeting/knock-list/${ROOM}/`);
+            const data = await res.json();
+            _knocks = data.knocks || [];
+            renderKnocks(_knocks);
+        } catch (e) { /* network blip — try again next interval */ }
+    }
+
+    /* ── Exposed globals ── */
+    window.admitUser = async function (userId, btn) {
+        btn.disabled = true; btn.textContent = "…";
+        try {
+            await post(`/meeting/admit/${ROOM}/${userId}/`);
+            btn.closest(".admit-row")?.remove();
+            _knocks = _knocks.filter(k => k.user_id !== userId);
+            renderKnocks(_knocks);
+        } catch (e) { btn.disabled = false; btn.textContent = "Admit"; }
+    };
+
+    window.denyUser = async function (userId, btn) {
+        btn.disabled = true; btn.textContent = "…";
+        try {
+            await post(`/meeting/deny/${ROOM}/${userId}/`);
+            btn.closest(".admit-row")?.remove();
+            _knocks = _knocks.filter(k => k.user_id !== userId);
+            renderKnocks(_knocks);
+        } catch (e) { btn.disabled = false; btn.textContent = "Deny"; }
+    };
+
+    window.admitAll = async function () {
+        await post(`/meeting/admit-all/${ROOM}/`);
+        _knocks = [];
+        renderKnocks([]);
+    };
+
+    window.denyAll = async function () {
+        await post(`/meeting/deny-all/${ROOM}/`);
+        _knocks = [];
+        renderKnocks([]);
+    };
+
+    pollKnocks();
+    _pollT = setInterval(pollKnocks, POLL_MS);
+    window.addEventListener("beforeunload", () => { if (_pollT) clearInterval(_pollT); });
+})();
 {% endif %}
 </script>
 

@@ -1106,6 +1106,17 @@ async function leaveMeeting() {
 
     await saveTranscript();   // ← save transcript before leaving
     _clearPrejoinStorage();
+
+    // Reset admission so the user must ask permission again on next join
+    if (!IS_HOST) {
+        try {
+            await fetch(`/meeting/knock-cancel/${ROOM_NAME}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            });
+        } catch(e) {}
+    }
+    
     if (room) await room.disconnect();
     window.location.href = "/";
 }

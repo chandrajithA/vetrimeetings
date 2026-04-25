@@ -115,6 +115,21 @@
       <div id="editInviteeList" class="mp-chips"></div>
     </div>
 
+    <div class="mp-field mp-toggle-row" style="margin-top:4px;">
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
+          Require join permission
+        </label>
+        <span style="font-size:12px;color:var(--color-text-secondary,#8b90a0);">
+          Participants will wait for your approval before entering
+        </span>
+      </div>
+      <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+        <input type="checkbox" id="editRequireAdmission">
+        <span class="mp-slider"></span>
+      </label>
+    </div>
+
     <button type="button" class="mp-submit-btn" id="editSubmitBtn" onclick="submitEdit()">
       <span id="editSubmitLabel">Save Changes</span>
       <span id="editSubmitSpinner" class="mp-spinner hidden"></span>
@@ -471,6 +486,7 @@ function openEditModal(m){
   document.getElementById('editTitle').value     = m.title;
   document.getElementById('editRepeat').value    = m.repeat || 'none';
   document.getElementById('editAllDay').checked  = m.is_all_day;
+  document.getElementById('editRequireAdmission').checked   = m.require_admission || false;
 
   editInvitees = m.invitees ? [...m.invitees] : [];
   renderEditInvitees();
@@ -500,7 +516,12 @@ function openEditModal(m){
       if (_fpEe){ _fpEe.set('minDate',null); _fpEe.setDate(dateToISO(e),true); if(startDate) _fpEe.set('minDate',startDate); }
       if (_fpEeT){ _fpEeT.set('minTime','00:00'); _fpEeT.setDate(`${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}`,true); }
     }
-    if (m.repeat_end_date && _fpER){ _fpER.set('minDate',null); _fpER.setDate(m.repeat_end_date,true); if(startDate) _fpER.set('minDate',startDate); }
+    if (m.repeat_end_date && _fpER){ _fpER.set('minDate',null); _fpER.setDate(m.repeat_end_date,true); }
+
+    // After populating, enforce today-or-later for user interaction
+    if (_fpES) _fpES.set('minDate', 'today');
+    if (_fpER) _fpER.set('minDate', 'today');
+    if (_fpER && startDate) _fpER.set('minDate', startDate > new Date() ? startDate : new Date());
   }, 60);
 }
 
@@ -566,7 +587,7 @@ async function submitEdit(){
     const res = await fetch(`/meeting/edit/${id}/`, {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
-      body:JSON.stringify({title,start,end,all_day:allDay,repeat,repeat_end:repeatEnd,invitees:editInvitees}),
+      body:JSON.stringify({title,start,end,all_day:allDay,repeat,repeat_end:repeatEnd,invitees:editInvitees,require_admission:document.getElementById('editRequireAdmission')?.checked||false}),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error||'Failed to update');

@@ -36,6 +36,7 @@ class Meeting(models.Model):
     meeting_url = models.URLField(max_length=500, blank=True, default="")
     is_active   = models.BooleanField(default=False)
     # ── Scheduling ──
+    require_admission = models.BooleanField(default=False)
     scheduled_start = models.DateTimeField(blank=True, null=True)
     scheduled_end   = models.DateTimeField(blank=True, null=True)
     is_all_day      = models.BooleanField(default=False)
@@ -72,6 +73,34 @@ class MeetingInvitee(models.Model):
 
     def __str__(self):
         return self.email
+    
+    
+    
+class WaitingRoomKnock(models.Model):
+    """
+    Tracks users waiting to be admitted into a meeting that requires admission.
+    One row per user per meeting.  Status transitions:
+        waiting → admitted  (host clicked Admit)
+        waiting → denied    (host clicked Deny)
+    """
+    STATUS_CHOICES = [
+        ('waiting',  'Waiting'),
+        ('admitted', 'Admitted'),
+        ('denied',   'Denied'),
+    ]
+
+    meeting      = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='knocks')
+    user         = models.ForeignKey(User, on_delete=models.CASCADE, related_name='knocks')
+    display_name = models.CharField(max_length=120, blank=True)
+    status       = models.CharField(max_length=10, choices=STATUS_CHOICES, default='waiting')
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('meeting', 'user')
+
+    def __str__(self):
+        return f"{self.display_name or self.user} → {self.meeting} [{self.status}]"
         
         
 class MeetingRecording(models.Model):

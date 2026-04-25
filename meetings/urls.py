@@ -19,12 +19,24 @@ urlpatterns = [
     path('meeting/deactivate/<str:room_name>/', deactivate_meeting, name='deactivate_meeting'),
     path("participants/<str:room_name>/", participants, name="meeting_participants"),
     
-    # ... existing urls ...
+    # Scheduling
     path('meeting/schedule/', schedule_meeting, name='schedule_meeting'),
     path('meeting/scheduled/', scheduled_meetings_for_date, name='scheduled_meetings_for_date'),
     path('meeting/all-scheduled/', all_scheduled_meetings, name='all_scheduled_meetings'),
     path('meeting/edit/<int:meeting_id>/', edit_meeting, name='edit_meeting'),
     path('meeting/delete/<int:meeting_id>/', delete_meeting, name='delete_meeting'),
+    
+    # ── NEW: Waiting room & admission ────────────────────────────────────────
+    path('meeting/waiting/<str:room_name>/', waiting_room, name='waiting_room'),
+    path('meeting/waiting-status/<str:room_name>/', waiting_status, name='waiting_status'),
+    path('meeting/knock/<str:room_name>/', knock, name='knock'),
+    path('meeting/knock-cancel/<str:room_name>/', knock_cancel, name='knock_cancel'),
+    path('meeting/admission-status/<str:room_name>/', admission_status, name='admission_status'),
+    path('meeting/knock-list/<str:room_name>/', knock_list, name='knock_list'),
+    path('meeting/admit/<str:room_name>/<int:user_id>/', admit_user, name='admit_user'),
+    path('meeting/deny/<str:room_name>/<int:user_id>/', deny_user, name='deny_user'),
+    path('meeting/admit-all/<str:room_name>/', admit_all_users, name='admit_all_users'),
+    path('meeting/deny-all/<str:room_name>/', deny_all_users, name='deny_all_users'),
     
     path('recordings/', recordings_hub, name='recordings_hub'),
     path('recordings/delete/<int:recording_id>/', delete_recording, name='delete_recording'),

@@ -1,0 +1,736 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="{% static 'meetings/images/video-white.png' %}">
+    <title>Waiting — {{ meeting.title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:       #0d0f14;
+            --surface:  #14171f;
+            --surface2: #1c2030;
+            --border:   rgba(255,255,255,0.07);
+            --accent:   #4f8ef7;
+            --accent2:  #6c63ff;
+            --text:     #e8eaf0;
+            --text-dim: #8b90a0;
+            --danger:   #e05555;
+            --success:  #3ecf8e;
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            overflow: hidden;
+        }
+
+        .bg-canvas {
+            position: fixed; inset: 0; z-index: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% -10%, rgba(79,142,247,0.12) 0%, transparent 70%),
+                radial-gradient(ellipse 50% 40% at 90% 80%, rgba(108,99,255,0.08) 0%, transparent 60%);
+        }
+        .bg-grid {
+            position: fixed; inset: 0; z-index: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+            background-size: 48px 48px;
+            mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 100%);
+        }
+
+        .wrapper {
+            position: relative; z-index: 1;
+            height: 100vh;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 24px;
+        }
+
+        /* ── Card (waiting room card, hidden until preview done) ── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 48px 52px;
+            max-width: 480px; width: 100%;
+            text-align: center;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            animation: cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes cardIn {
+            from { opacity:0; transform:translateY(20px) scale(0.97); }
+            to   { opacity:1; transform:none; }
+        }
+
+        /* ── Preview overlay ── */
+        #previewOverlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: var(--bg);
+            display: flex; align-items: center; justify-content: center;
+            padding: 24px;
+        }
+        .preview-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 36px 32px;
+            max-width: 440px; width: 100%;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+            animation: cardIn 0.4s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        .preview-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+        .preview-subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; }
+
+        .pv-video-wrap {
+            width: 100%; aspect-ratio: 16/9;
+            background: #0b0d11; border-radius: 12px;
+            overflow: hidden; position: relative; margin-bottom: 16px;
+        }
+        #pvVideo {
+            width: 100%; height: 100%; object-fit: cover;
+            display: block; transform: scaleX(-1);
+        }
+        #pvCamOff {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 10px; background: #0b0d11;
+            color: var(--text-dim); font-size: 13px;
+        }
+        #pvAvatar {
+            width: 56px; height: 56px; border-radius: 50%;
+            background: var(--accent);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 700; color: #fff;
+        }
+        #pvPermDenied {
+            display: none; position: absolute;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(224,85,85,0.9); color: #fff;
+            font-size: 12px; padding: 10px 14px; text-align: center;
+        }
+
+        .pv-av-row { display: flex; gap: 10px;  }
+        .pv-av-btn {
+            flex: 1; padding: 10px 12px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--text); font-size: 13px; font-weight: 500;
+            cursor: pointer; font-family: inherit; transition: all 0.15s;
+            display: flex; 
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pv-av-btn img {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+        .pv-av-btn.off {
+            background: rgba(224,85,85,0.15);
+            border-color: rgba(224,85,85,0.4);
+            color: #e88;
+        }
+
+        .pv-name-wrap { margin-bottom: 16px; }
+        .pv-name-wrap label {
+            font-size: 12px; color: var(--text-dim);
+            display: block; margin-bottom: 6px;
+        }
+        .pv-name-wrap input {
+            width: 100%; padding: 10px 12px;
+            border-radius: 8px; border: 1px solid var(--border);
+            background: var(--surface2); color: var(--text);
+            font-size: 14px; font-family: inherit; outline: none;
+            transition: border-color 0.15s;
+        }
+        .pv-name-wrap input:focus { border-color: var(--accent); }
+
+        .btn-primary {
+            width: 100%; padding: 13px; border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            color: #fff; font-family: inherit; font-size: 14px;
+            font-weight: 600; cursor: pointer; margin-bottom: 10px;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary:active { transform: scale(0.98); }
+
+        .btn-ghost {
+            width: 100%; padding: 13px; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: transparent; color: var(--text-dim);
+            font-family: inherit; font-size: 14px; cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.05); }
+
+        /* ── Waiting card internals ── */
+        .icon-ring {
+            position: relative; width: 72px; height: 72px;
+            margin: 0 auto 28px;
+        }
+        .icon-ring::before, .icon-ring::after {
+            content: ''; position: absolute; inset: 0;
+            border-radius: 50%; border: 1px solid var(--accent); opacity: 0;
+        }
+        .icon-ring::before { animation: pulse-ring 2.4s ease-out 0.2s infinite; }
+        .icon-ring::after  { animation: pulse-ring 2.4s ease-out 1.2s infinite; }
+        @keyframes pulse-ring {
+            0%   { transform:scale(1);   opacity:0.6; }
+            100% { transform:scale(2.2); opacity:0;   }
+        }
+        .icon-inner {
+            position: absolute; inset: 0;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 32px rgba(79,142,247,0.35);
+        }
+        .icon-inner svg { width: 32px; height: 32px; }
+
+        .meeting-name {
+            font-family: 'DM Serif Display', serif;
+            font-size: 22px; font-weight: 400;
+            color: var(--text); margin-bottom: 8px; line-height: 1.2;margin-top:40px;
+        }
+        .status-line {
+            font-size: 14px; color: var(--text-dim);
+            margin-bottom: 32px; line-height: 1.5;
+        }
+
+        .state-badge {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 100px; padding: 8px 18px;
+            font-size: 13px; font-weight: 500; color: var(--text-dim);
+            margin-bottom: 32px; transition: all 0.4s ease;
+        }
+        .state-badge.admitted  { background:rgba(62,207,142,0.1);  border-color:rgba(62,207,142,0.3);  color:var(--success); }
+        .state-badge.denied    { background:rgba(224,85,85,0.1);   border-color:rgba(224,85,85,0.3);   color:var(--danger);  }
+
+        .dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
+        .dot.pulse { background:var(--accent); animation:dot-pulse 1.5s ease-in-out infinite; }
+        .dot.green { background:var(--success); }
+        .dot.red   { background:var(--danger);  }
+        @keyframes dot-pulse {
+            0%,100% { opacity:1; transform:scale(1);   }
+            50%     { opacity:0.4; transform:scale(0.7); }
+        }
+
+        .waiting-dots {
+            display:flex; align-items:center; justify-content:center;
+            gap:6px; margin-bottom:32px;
+        }
+        .waiting-dots span {
+            width:6px; height:6px; border-radius:50%;
+            background:var(--accent); opacity:0.2;
+            animation:bounce-dot 1.4s ease-in-out infinite;
+        }
+        .waiting-dots span:nth-child(2) { animation-delay:0.2s; }
+        .waiting-dots span:nth-child(3) { animation-delay:0.4s; }
+        @keyframes bounce-dot {
+            0%,80%,100% { opacity:0.2; transform:scale(0.8); }
+            40%         { opacity:1;   transform:scale(1.2); }
+        }
+
+        .host-row {
+            display:flex; align-items:center; gap:10px;
+            justify-content:center; margin-bottom:32px;
+            padding:12px 20px; background:var(--surface2);
+            border-radius:12px; border:1px solid var(--border);
+        }
+        .host-avatar {
+            width:32px; height:32px; border-radius:50%;
+            background:linear-gradient(135deg,var(--accent),var(--accent2));
+            display:flex; align-items:center; justify-content:center;
+            font-size:12px; font-weight:600; color:#fff; flex-shrink:0;
+        }
+        .host-info { text-align:left; }
+        .host-label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em; }
+        .host-name  { font-size:13px; font-weight:500; color:var(--text); }
+
+        .btn-cancel {
+            width:100%; padding:13px; border-radius:12px;
+            border:1px solid rgba(224,85,85,0.3);
+            background:rgba(224,85,85,0.08);
+            color:#e88; font-family:'DM Sans',sans-serif;
+            font-size:14px; font-weight:500; cursor:pointer;
+            transition:all 0.2s;
+        }
+        .btn-cancel:hover { background:rgba(224,85,85,0.15); border-color:rgba(224,85,85,0.5); color:var(--danger); }
+
+        .btn-join {
+            width:100%; padding:13px; border-radius:12px; border:none;
+            background:linear-gradient(135deg,var(--accent),var(--accent2));
+            color:#fff; font-family:'DM Sans',sans-serif;
+            font-size:14px; font-weight:600; cursor:pointer;
+            margin-bottom:12px; transition:all 0.2s;
+            box-shadow:0 4px 16px rgba(79,142,247,0.3);
+            display:none;
+        }
+        .btn-join:hover { transform:translateY(-1px); box-shadow:0 6px 24px rgba(79,142,247,0.45); }
+        .btn-join.visible { display:block; animation:fadeUp 0.3s ease both; }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+
+        .toast {
+            position:fixed; bottom:32px; left:50%;
+            transform:translateX(-50%) translateY(80px);
+            background:var(--surface2); border:1px solid var(--border);
+            border-radius:12px; padding:12px 24px;
+            font-size:13px; color:var(--text); z-index:9999;
+            transition:transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.35s;
+            opacity:0; pointer-events:none;
+        }
+        .toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+
+        @media (max-width:500px) {
+            .card,.preview-card { padding:32px 24px; }
+            .meeting-name { font-size:18px;  }
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-canvas"></div>
+<div class="bg-grid"></div>
+
+<!-- ══════════════════════════════════════
+     STEP 1 — AV Preview overlay
+     ══════════════════════════════════════ -->
+<div id="previewOverlay">
+    <div class="preview-card">
+        <h2>Ready to join?</h2>
+        <p class="preview-subtitle">{{ meeting.title }}</p>
+
+        <div class="pv-video-wrap">
+            <video id="pvVideo" autoplay muted playsinline></video>
+            <div id="pvCamOff">
+                <div id="pvAvatar">?</div>
+                <span>Camera is off</span>
+            </div>
+            <div id="pvPermDenied">
+                Camera / mic access denied — please allow in browser settings and refresh.
+            </div>
+        </div>
+
+        <div class="pv-av-row">
+            <button id="pvMicBtn" class="pv-av-btn" onclick="pvToggleMic()">
+                <img src="{% static 'meetings/images/audio-on.png' %}" id="lobbyMicIcon"
+                     data-on="{% static 'meetings/images/audio-on.png' %}"
+                     data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
+                <span id="lobbyMicLabel">Mic On</span>
+            </button>
+            <button id="pvCamBtn" class="pv-av-btn" onclick="pvToggleCam()">
+                <img src="{% static 'meetings/images/video-on.png' %}" id="lobbyCamIcon"
+                     data-on="{% static 'meetings/images/video-on.png' %}"
+                     data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
+                <span id="lobbyCamLabel">Cam On</span>
+            </button>
+        </div>
+
+        <div class="pv-name-wrap">
+            <label for="pvName">Your Name</label>
+            <input type="text" id="pvName"
+                   value="{{ display_name|escapejs }}"
+                   placeholder="Enter your name" maxlength="60" autocomplete="off">
+        </div>
+
+        <button class="btn-primary" onclick="pvProceed()">Join</button>
+        <button class="btn-ghost"   onclick="window.location.href='/'">Cancel</button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     STEP 2 — Waiting room card (hidden until preview done)
+     ══════════════════════════════════════ -->
+<div class="wrapper" id="waitingWrapper" style="display:none;">
+    <div class="card">
+
+        <div class="icon-ring">
+            <div class="icon-inner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="meeting-name">{{ meeting.title }}</div>
+        <div class="status-line" id="statusLine">Please wait while the host starts the meeting.</div>
+
+        <div class="state-badge" id="stateBadge">
+            <span class="dot pulse" id="stateDot"></span>
+            <span id="stateText">Waiting for host…</span>
+        </div>
+
+        <div class="waiting-dots" id="waitingDots">
+            <span></span><span></span><span></span>
+        </div>
+
+        <button class="btn-join" id="joinBtn" onclick="proceedToRoom()">
+            Join Meeting Now
+        </button>
+
+        <button class="btn-cancel" onclick="cancelWait()">Leave Waiting Room</button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════
+   CONSTANTS  (from Django context)
+   ════════════════════════════════════════════════════════ */
+const ROOM_NAME        = "{{ room_name }}";
+const REQUIRE_ADMISSION = {{ meeting.require_admission|yesno:"true,false" }};
+const DISPLAY_NAME_DEFAULT = "{{ display_name|escapejs }}";
+
+/* ════════════════════════════════════════════════════════
+   STEP 1 — PREVIEW OVERLAY
+   ════════════════════════════════════════════════════════ */
+let pvMicOn      = true;
+let pvCamOn      = true;
+let pvStream     = null;
+let pvPermDenied = false;
+
+/* Set avatar initials from default name */
+(function () {
+    const n = DISPLAY_NAME_DEFAULT;
+    if (n) {
+        document.getElementById("pvAvatar").textContent =
+            n.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+    }
+})();
+
+async function pvStartPreview() {
+    const videoEl = document.getElementById("pvVideo");
+    const camOff  = document.getElementById("pvCamOff");
+    const permEl  = document.getElementById("pvPermDenied");
+
+    try {
+        pvStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        pvStream.getVideoTracks().forEach(t => t.enabled = pvCamOn);
+        pvStream.getAudioTracks().forEach(t => t.enabled = pvMicOn);
+
+        if (pvCamOn && pvStream.getVideoTracks().length) {
+            videoEl.srcObject = pvStream;
+            camOff.style.display = "none";
+        } else {
+            camOff.style.display = "flex";
+        }
+    } catch (e) {
+        if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
+            pvPermDenied = true;
+            pvMicOn = false; pvCamOn = false;
+            permEl.style.display = "block";
+            document.getElementById("pvMicBtn").disabled = true;
+            document.getElementById("pvMicBtn").style.opacity = "0.4";
+            document.getElementById("pvCamBtn").disabled = true;
+            document.getElementById("pvCamBtn").style.opacity = "0.4";
+        }
+        camOff.style.display = "flex";
+    }
+    syncPvBtns();
+}
+
+function syncPvBtns() {
+    const micBtn   = document.getElementById("pvMicBtn");
+    const camBtn   = document.getElementById("pvCamBtn");
+    const micIcon  = document.getElementById("lobbyMicIcon");
+    const camIcon  = document.getElementById("lobbyCamIcon");
+    const micLabel = document.getElementById("lobbyMicLabel");
+    const camLabel = document.getElementById("lobbyCamLabel");
+
+    micIcon.src = pvMicOn ? micIcon.dataset.on : micIcon.dataset.off;
+    micLabel.textContent = pvMicOn ? "Mic On" : "Mic Off";
+    micBtn.classList.toggle("off", !pvMicOn);  // red bg when off
+
+    camIcon.src = pvCamOn ? camIcon.dataset.on : camIcon.dataset.off;
+    camLabel.textContent = pvCamOn ? "Cam On" : "Cam Off";
+    camBtn.classList.toggle("off", !pvCamOn);  // red bg when off
+}
+
+function pvToggleMic() {
+    if (pvPermDenied) return;
+    pvMicOn = !pvMicOn;
+    if (pvStream) pvStream.getAudioTracks().forEach(t => t.enabled = pvMicOn);
+    syncPvBtns();
+}
+
+async function pvToggleCam() {
+    if (pvPermDenied) return;
+    pvCamOn = !pvCamOn;
+
+    const videoEl = document.getElementById("pvVideo");
+    const camOff  = document.getElementById("pvCamOff");
+
+    if (!pvCamOn) {
+        if (pvStream) pvStream.getVideoTracks().forEach(t => t.enabled = false);
+        videoEl.srcObject = null;
+        camOff.style.display = "flex";
+    } else {
+        camOff.style.display = "none";
+        if (pvStream && pvStream.getVideoTracks().length) {
+            pvStream.getVideoTracks().forEach(t => t.enabled = true);
+            videoEl.srcObject = pvStream;
+        } else {
+            try {
+                const vs = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user" }, audio: false
+                });
+                if (pvStream) {
+                    pvStream.addTrack(vs.getVideoTracks()[0]);
+                } else {
+                    pvStream = vs;
+                }
+                videoEl.srcObject = pvStream;
+            } catch (e) {
+                pvCamOn = false;
+                camOff.style.display = "flex";
+            }
+        }
+    }
+    syncPvBtns();
+}
+
+function pvProceed() {
+    const nameInput = document.getElementById("pvName");
+    const name = nameInput.value.trim();
+    if (!name) {
+        nameInput.focus();
+        nameInput.style.borderColor = "var(--danger)";
+        setTimeout(() => nameInput.style.borderColor = "", 1500);
+        return;
+    }
+
+    /* Save AV choices for when the user eventually enters the room */
+    sessionStorage.setItem("pv_mic", pvMicOn ? "1" : "0");
+    sessionStorage.setItem("pv_cam", pvCamOn ? "1" : "0");
+    sessionStorage.setItem("join_display_name", name);
+
+    /* Stop preview — we do NOT need camera/mic on the waiting page */
+    if (pvStream) {
+        pvStream.getTracks().forEach(t => t.stop());
+        pvStream = null;
+    }
+    document.getElementById("pvVideo").srcObject = null;
+
+    /* Hide preview, show waiting card */
+    document.getElementById("previewOverlay").style.display = "none";
+    document.getElementById("waitingWrapper").style.display  = "flex";
+
+    /* Kick off the waiting-room logic with the confirmed name */
+    startWaiting(name);
+}
+
+/* Start preview as soon as the page loads */
+pvStartPreview();
+
+
+/* ════════════════════════════════════════════════════════
+   STEP 2 — WAITING ROOM POLLING
+   ════════════════════════════════════════════════════════ */
+const POLL_INTERVAL = 15000;   /* 15 s — enough for most cases */
+
+let _pollTimer    = null;
+let _state        = "waiting"; /* waiting | pending_admission | admitted | denied | started_no_admission */
+let _autoJoinDone = false;
+let _pollName     = DISPLAY_NAME_DEFAULT; /* updated when user confirms name */
+let _knockSent    = false;               /* prevent duplicate knock POSTs */
+
+const stateBadge  = document.getElementById("stateBadge");
+const stateDot    = document.getElementById("stateDot");
+const stateText   = document.getElementById("stateText");
+const statusLine  = document.getElementById("statusLine");
+const waitingDots = document.getElementById("waitingDots");
+const joinBtn     = document.getElementById("joinBtn");
+const toast       = document.getElementById("toast");
+
+function showToast(msg, duration = 3500) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), duration);
+}
+
+function setState(newState) {
+    if (_state === newState) return;
+    _state = newState;
+
+    stateBadge.className = "state-badge";
+    stateDot.className   = "dot";
+
+    switch (newState) {
+        case "waiting":
+            stateDot.classList.add("pulse");
+            stateText.textContent  = "Waiting for host…";
+            statusLine.textContent = "Please wait while the host starts the meeting.";
+            waitingDots.style.display = "flex";
+            joinBtn.classList.remove("visible");
+            break;
+
+        case "pending_admission":
+            stateDot.classList.add("pulse");
+            stateText.textContent  = "Waiting for host to admit you…";
+            statusLine.textContent = "The host has been notified. Please wait to be admitted.";
+            waitingDots.style.display = "flex";
+            joinBtn.classList.remove("visible");
+            break;
+
+        case "admitted":
+            stateBadge.classList.add("admitted");
+            stateDot.classList.add("green");
+            stateText.textContent  = "You've been admitted!";
+            statusLine.textContent = "The host has admitted you. Joining the meeting…";
+            waitingDots.style.display = "none";
+            joinBtn.classList.add("visible");
+            showToast("✅ You've been admitted! Joining now…");
+            setTimeout(proceedToRoom, 1500);
+            break;
+
+        case "denied":
+            stateBadge.classList.add("denied");
+            stateDot.classList.add("red");
+            stateText.textContent  = "Entry was denied";
+            statusLine.textContent = "The host declined your request to join.";
+            waitingDots.style.display = "none";
+            joinBtn.classList.remove("visible");
+            if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+            showToast("❌ The host declined your request.", 5000);
+            break;
+
+        case "started_no_admission":
+            stateDot.classList.add("green");
+            stateText.textContent  = "Meeting has started!";
+            statusLine.textContent = "The meeting is ready. Joining now…";
+            waitingDots.style.display = "none";
+            joinBtn.classList.add("visible");
+            showToast("✅ Meeting started! Joining…");
+            setTimeout(proceedToRoom, 1000);
+            break;
+    }
+}
+
+async function sendKnock(name) {
+    if (_knockSent) return;
+    _knockSent = true;
+    try {
+        await fetch(`/meeting/knock/${ROOM_NAME}/`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCookie("csrftoken"),
+            },
+            body: JSON.stringify({ display_name: name }),
+        });
+    } catch (e) {
+        /* If knock fails, allow retry on next poll cycle */
+        _knockSent = false;
+        console.warn("Knock failed:", e);
+    }
+}
+
+async function poll() {
+    try {
+        /* ── 1. Is the meeting live? ── */
+        const res  = await fetch(
+            `/meeting/waiting-status/${ROOM_NAME}/?name=${encodeURIComponent(_pollName)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (!data.meeting_active) {
+            /* Meeting not started yet — stay in "waiting" */
+            setState("waiting");
+            return;
+        }
+
+        /* ── 2. Meeting is active ── */
+        if (!REQUIRE_ADMISSION) {
+            /* No admission needed — just join */
+            setState("started_no_admission");
+            return;
+        }
+
+        /* ── 3. Admission required: knock first ── */
+        if (_state === "waiting") {
+            setState("pending_admission");
+            await sendKnock(_pollName);
+        }
+
+        /* ── 4. Check if host has admitted / denied us ── */
+        const aRes  = await fetch(`/meeting/admission-status/${ROOM_NAME}/`);
+        if (!aRes.ok) return;
+        const aData = await aRes.json();
+
+        if (aData.status === "admitted") {
+            setState("admitted");
+        } else if (aData.status === "denied") {
+            setState("denied");
+        }
+        /* else still "pending" — wait for next poll */
+
+    } catch (e) {
+        console.warn("Poll error:", e);
+    }
+}
+
+function startWaiting(name) {
+    _pollName  = name || DISPLAY_NAME_DEFAULT;
+    _knockSent = false;
+
+    /* Poll immediately so user sees a fast first response,
+       then every POLL_INTERVAL ms */
+    poll();
+    if (_pollTimer) clearInterval(_pollTimer);
+    _pollTimer = setInterval(poll, POLL_INTERVAL);
+}
+
+function proceedToRoom() {
+    if (_autoJoinDone) return;
+    _autoJoinDone = true;
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+
+    /* Pass the confirmed name + AV choices to the room page */
+    sessionStorage.setItem("join_display_name", _pollName);
+    sessionStorage.setItem("prejoin_mic", sessionStorage.getItem("pv_mic") || "1");
+    sessionStorage.setItem("prejoin_cam", sessionStorage.getItem("pv_cam") || "1");
+
+    window.location.href = `/room/${ROOM_NAME}/`;
+}
+
+function cancelWait() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+
+    /* Tell server we're leaving the queue */
+    const fd = new FormData();
+    fd.append("csrfmiddlewaretoken", getCookie("csrftoken"));
+    navigator.sendBeacon(`/meeting/knock-cancel/${ROOM_NAME}/`, fd);
+
+    window.location.href = "/";
+}
+
+function getCookie(name) {
+    const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+    return v ? v.pop() : "";
+}
+</script>
+
+</body>
+</html>

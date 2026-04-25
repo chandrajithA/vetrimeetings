@@ -8,7 +8,7 @@ from livekit.api import AccessToken, VideoGrants, LiveKitAPI
 from livekit.api import DeleteRoomRequest, ListParticipantsRequest
 import asyncio
 import secrets
-from .models import Meeting, MeetingRecording
+from .models import Meeting, MeetingRecording, WaitingRoomKnock
 import json
 from livekit.api import UpdateRoomMetadataRequest
 from .emails import send_meeting_invite
@@ -21,7 +21,6 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.hashers import check_password
 from django.http import HttpResponse
 import requests
-
 
 
 ######################################################
@@ -53,7 +52,6 @@ def _ensure_meeting_chat(meeting, user):
     return chat
 
 
-
 ######################################################
 # TOKEN
 ######################################################
@@ -71,7 +69,6 @@ def get_token(request, room_name):
         meeting.meeting_url = _build_meeting_url(request, room_name)
         meeting.save(update_fields=["meeting_url"])
 
-    # Allow the lobby preview to override the display name for this session
     display_name = request.GET.get("display_name", "").strip() or request.user.name
 
     token = AccessToken(
@@ -79,7 +76,7 @@ def get_token(request, room_name):
         api_secret=settings.LIVEKIT_API_SECRET,
     )
     token.with_identity(str(request.user.id))
-    token.with_name(display_name)          # ← uses lobby name if provided
+    token.with_name(display_name)
     token.with_grants(VideoGrants(
         room_join=True,
         room=room_name,
@@ -98,7 +95,7 @@ def get_token(request, room_name):
 
 
 ######################################################
-# ROOM VIEW
+# ROOM VIEW  (updated)
 ######################################################
 
 @login_required
@@ -106,38 +103,278 @@ def room(request, room_name):
     meeting = Meeting.objects.filter(room_name=room_name).first()
 
     if not meeting:
-        messages.error(request, "Error in joining meeting. Meeting not found.")
+        messages.error(request, "Meeting not found.")
         return redirect('meetings:dashboard')
 
     if not meeting.meeting_url:
         meeting.meeting_url = _build_meeting_url(request, room_name)
         meeting.save(update_fields=["meeting_url"])
 
-    if meeting.host != request.user and not meeting.is_active:
-        messages.error(request, "This meeting has ended.")
-        return redirect('meetings:dashboard')
+    is_host = (meeting.host == request.user)
 
-    if meeting.host == request.user and not meeting.is_active:
-        meeting.is_active = True
-        meeting.save(update_fields=["is_active"])
+    # ── Host activates meeting on entry ──────────────────────────────────────
+    if is_host:
+        if not meeting.is_active:
+            meeting.is_active = True
+            meeting.save(update_fields=["is_active"])
+        chat = _ensure_meeting_chat(meeting, request.user)
+        return render(request, "meetings/room.html", {
+            "meeting":     meeting,
+            "room_name":   room_name,
+            "is_host":     True,
+            "meeting_url": meeting.meeting_url,
+            "chat_id":     chat.id,
+        })
 
-    # Ensure the meeting has a persistent chat and this user is a member
+    # ── Non-host: meeting not started yet → waiting room ─────────────────────
+    if not meeting.is_active:
+        display_name = (
+            request.GET.get("display_name", "").strip()
+            or request.session.get("join_display_name", "")
+            or request.user.name
+        )
+        return render(request, "meetings/waiting_room.html", {
+            "meeting":      meeting,
+            "room_name":    room_name,
+            "display_name": display_name,
+        })
+
+    # ── Non-host: meeting is active but requires admission ───────────────────
+    if meeting.require_admission:
+        # Check if this user already has an admission decision
+        knock = WaitingRoomKnock.objects.filter(
+            meeting=meeting, user=request.user
+        ).first()
+
+        if knock is None or knock.status == 'waiting':
+            # Not yet admitted — send to waiting room
+            display_name = (
+                request.GET.get("display_name", "").strip()
+                or request.session.get("join_display_name", "")
+                or request.user.name
+            )
+            # Auto-create the knock record so host can see them
+            if knock is None:
+                WaitingRoomKnock.objects.create(
+                    meeting=meeting,
+                    user=request.user,
+                    display_name=display_name,
+                    status='waiting',
+                )
+            return render(request, "meetings/waiting_room.html", {
+                "meeting":      meeting,
+                "room_name":    room_name,
+                "display_name": display_name,
+            })
+
+        elif knock.status == 'denied':
+            messages.error(request, "The host declined your request to join.")
+            return redirect('meetings:dashboard')
+
+        # admitted → fall through to normal room render
+
+    # ── Non-host: enter meeting ───────────────────────────────────────────────
     chat = _ensure_meeting_chat(meeting, request.user)
-
     return render(request, "meetings/room.html", {
         "meeting":     meeting,
         "room_name":   room_name,
-        "is_host":     meeting.host == request.user,
+        "is_host":     False,
         "meeting_url": meeting.meeting_url,
         "chat_id":     chat.id,
     })
-    
-    
-
 
 
 ######################################################
-# CREATE MEETING
+# WAITING ROOM VIEWS  (all NEW)
+######################################################
+
+@login_required
+def waiting_room(request, room_name):
+    """Explicit waiting room view (also rendered by room() above)."""
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    display_name = (
+        request.GET.get("display_name", "").strip()
+        or request.user.name
+    )
+    return render(request, "meetings/waiting_room.html", {
+        "meeting":      meeting,
+        "room_name":    room_name,
+        "display_name": display_name,
+    })
+
+
+@login_required
+def waiting_status(request, room_name):
+    """
+    GET /meeting/waiting-status/<room>/
+    Poll endpoint for the waiting room page.
+    Returns { meeting_active, require_admission }
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    return JsonResponse({
+        "meeting_active":    meeting.is_active,
+        "require_admission": meeting.require_admission,
+    })
+
+
+@login_required
+@require_POST
+def knock(request, room_name):
+    """
+    POST /meeting/knock/<room>/
+    Register (or re-register) the user as knocking.
+    Body: { display_name }
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        body = {}
+
+    display_name = body.get("display_name", "").strip() or request.user.name
+
+    knock_obj, created = WaitingRoomKnock.objects.get_or_create(
+        meeting=meeting,
+        user=request.user,
+        defaults={"display_name": display_name, "status": "waiting"},
+    )
+    if not created and knock_obj.status == "denied":
+        # Allow re-knock if previously denied (host can change mind)
+        knock_obj.status = "waiting"
+        knock_obj.display_name = display_name
+        knock_obj.save(update_fields=["status", "display_name", "updated_at"])
+
+    return JsonResponse({"status": knock_obj.status})
+
+
+@login_required
+@require_POST
+def knock_cancel(request, room_name):
+    """
+    POST /meeting/knock-cancel/<room>/
+    User left the waiting room — remove their knock.
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    WaitingRoomKnock.objects.filter(meeting=meeting, user=request.user).delete()
+    return JsonResponse({"status": "cancelled"})
+
+
+@login_required
+def admission_status(request, room_name):
+    """
+    GET /meeting/admission-status/<room>/
+    The waiting user polls this to find out if they were admitted or denied.
+    Returns { status: 'waiting' | 'admitted' | 'denied' }
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    knock_obj = WaitingRoomKnock.objects.filter(
+        meeting=meeting, user=request.user
+    ).first()
+
+    if not knock_obj:
+        # If meeting doesn't require admission OR knock was never created → admitted
+        status = "admitted" if not meeting.require_admission else "waiting"
+    else:
+        status = knock_obj.status
+
+    return JsonResponse({"status": status})
+
+
+@login_required
+def knock_list(request, room_name):
+    """
+    GET /meeting/knock-list/<room>/
+    HOST ONLY — returns list of users currently waiting.
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({"error": "Host only"}, status=403)
+
+    knocks = WaitingRoomKnock.objects.filter(
+        meeting=meeting, status="waiting"
+    ).select_related("user").order_by("created_at")
+
+    return JsonResponse({
+        "knocks": [
+            {
+                "knock_id":     k.id,
+                "user_id":      k.user.id,
+                "display_name": k.display_name or k.user.name,
+                "avatar":       (k.display_name or k.user.name or "?")[0].upper(),
+            }
+            for k in knocks
+        ]
+    })
+
+
+@login_required
+@require_POST
+def admit_user(request, room_name, user_id):
+    """
+    POST /meeting/admit/<room>/<user_id>/
+    Host admits a specific user.
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({"error": "Host only"}, status=403)
+
+    updated = WaitingRoomKnock.objects.filter(
+        meeting=meeting, user_id=user_id
+    ).update(status="admitted")
+
+    return JsonResponse({"admitted": bool(updated)})
+
+
+@login_required
+@require_POST
+def deny_user(request, room_name, user_id):
+    """
+    POST /meeting/deny/<room>/<user_id>/
+    Host denies a specific user.
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({"error": "Host only"}, status=403)
+
+    updated = WaitingRoomKnock.objects.filter(
+        meeting=meeting, user_id=user_id
+    ).update(status="denied")
+
+    return JsonResponse({"denied": bool(updated)})
+
+
+@login_required
+@require_POST
+def admit_all_users(request, room_name):
+    """POST /meeting/admit-all/<room>/  — Host admits everyone waiting."""
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({"error": "Host only"}, status=403)
+
+    count = WaitingRoomKnock.objects.filter(
+        meeting=meeting, status="waiting"
+    ).update(status="admitted")
+
+    return JsonResponse({"admitted_count": count})
+
+
+@login_required
+@require_POST
+def deny_all_users(request, room_name):
+    """POST /meeting/deny-all/<room>/  — Host denies everyone waiting."""
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({"error": "Host only"}, status=403)
+
+    count = WaitingRoomKnock.objects.filter(
+        meeting=meeting, status="waiting"
+    ).update(status="denied")
+
+    return JsonResponse({"denied_count": count})
+
+
+######################################################
+# CREATE MEETING  (updated — passes require_admission)
 ######################################################
 
 @login_required
@@ -145,41 +382,44 @@ def create_meeting(request):
     title = request.GET.get("title") or request.POST.get("title", "Quick Meeting")
     room_name = secrets.token_hex(32)
 
+    # Support require_admission from JSON body (dashboard POST)
+    require_admission = False
+    if request.method == "POST" and request.content_type == "application/json":
+        try:
+            body = json.loads(request.body)
+            title = body.get("title", title)
+            require_admission = bool(body.get("require_admission", False))
+        except Exception:
+            pass
+    elif request.method == "POST":
+        require_admission = request.POST.get("require_admission") == "1"
+
     meeting = Meeting.objects.create(
         host=request.user,
         room_name=room_name,
         title=title,
+        require_admission=require_admission,
     )
     meeting.meeting_url = _build_meeting_url(request, room_name)
     meeting.save(update_fields=["meeting_url"])
-    
-    # Create persistent chat for instant meetings too
+
     _ensure_meeting_chat(meeting, request.user)
 
     redirect_url = f"/room/{room_name}/"
 
-    # AJAX POST from dashboard → return JSON
     if request.method == "POST":
         return JsonResponse({"redirect": redirect_url, "room_name": room_name})
 
-    # Direct GET (fallback / legacy) → plain redirect
     return redirect('meetings:meeting_room', room_name=room_name)
 
 
 ######################################################
 # JOIN BY MEETING ID + PASSCODE
-# POST /meeting/join/  { meeting_id, passcode }
-# Returns JSON { room_name } on success, or { error } on failure.
 ######################################################
 
 @login_required
 @require_POST
 def join_by_id(request):
-    """
-    Validate meeting_id + passcode and redirect to the room.
-    Accepts both POST (form/AJAX) and GET (for direct URL use).
-    """
-        
     try:
         body = json.loads(request.body)
     except Exception:
@@ -192,9 +432,13 @@ def join_by_id(request):
         return JsonResponse({"error": "Meeting ID and passcode are required."}, status=400)
 
     try:
-        meeting = Meeting.objects.get(meeting_id=meeting_id, is_active=True)
+        meeting = Meeting.objects.get(meeting_id=meeting_id)
     except Meeting.DoesNotExist:
         return JsonResponse({"error": "Meeting not found. Check your Meeting ID."}, status=404)
+
+    # Allow joining if meeting is active OR it's scheduled (waiting room handles it)
+    if not meeting.is_active and not meeting.is_scheduled and meeting.host != request.user:
+        return JsonResponse({"error": "This meeting has not started yet."}, status=404)
 
     if meeting.passcode.upper() != passcode:
         return JsonResponse({"error": "Incorrect passcode."}, status=403)
@@ -213,9 +457,11 @@ def end_meeting(request, room_name):
     if not meeting:
         return JsonResponse({"error": "Meeting not found"}, status=404)
 
-    # Mark inactive immediately
     meeting.is_active = False
     meeting.save(update_fields=["is_active"])
+
+    # Clean up waiting room knocks
+    WaitingRoomKnock.objects.filter(meeting=meeting).delete()
 
     async def _end_livekit():
         import asyncio as _asyncio
@@ -228,46 +474,32 @@ def end_meeting(request, room_name):
                 await lk.room.update_room_metadata(
                     UpdateRoomMetadataRequest(room=room_name, metadata="ended")
                 )
-            except Exception as e:
-                pass  # silently ignore — clients already got the signal
-
+            except Exception:
+                pass
             await _asyncio.sleep(0.5)
-
             try:
                 await lk.room.delete_room(DeleteRoomRequest(room=room_name))
             except Exception:
-                pass  # room may already be gone
+                pass
 
     def _run_in_thread():
-        """
-        Run async LiveKit calls in a brand-new event loop on a worker thread.
-        Completely isolated from the ASGI event loop, so no CancelledError leaks.
-        We also suppress the asyncio CancelledError log that asgiref emits when
-        the parent request is torn down before the thread finishes.
-        """
         import logging
         import asyncio as _asyncio
-
-        # Silence the asgiref 'CancelledError exception in shielded future' noise
         logging.getLogger("asyncio").setLevel(logging.CRITICAL)
         logging.getLogger("asgiref").setLevel(logging.CRITICAL)
-
         loop = _asyncio.new_event_loop()
         _asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(_end_livekit())
         except Exception:
-            pass  # swallow everything — meeting is already marked inactive in DB
+            pass
         finally:
             try:
-                # Cancel any lingering tasks cleanly before closing the loop
                 pending = _asyncio.all_tasks(loop)
                 for task in pending:
                     task.cancel()
                 if pending:
-                    loop.run_until_complete(
-                        _asyncio.gather(*pending, return_exceptions=True)
-                    )
+                    loop.run_until_complete(_asyncio.gather(*pending, return_exceptions=True))
             except Exception:
                 pass
             loop.close()
@@ -327,7 +559,6 @@ def save_recording(request):
     
 @login_required
 def recordings_hub(request):
-    # Recordings from meetings hosted by this user
     recordings = MeetingRecording.objects.filter(
         meeting__host=request.user
     ).select_related('meeting').order_by('-recorded_at')
@@ -348,12 +579,9 @@ def delete_recording(request, recording_id):
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
-    
-
-
 
 ######################################################
-# SCHEDULE MEETING
+# SCHEDULE MEETING  (updated — passes require_admission)
 ######################################################
 
 @login_required
@@ -364,13 +592,14 @@ def schedule_meeting(request):
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    title        = body.get("title", "Scheduled Meeting").strip() or "Scheduled Meeting"
-    start_str    = body.get("start")       # ISO string or None
-    end_str      = body.get("end")
-    is_all_day   = body.get("all_day", False)
-    repeat       = body.get("repeat", "none")
-    repeat_end   = body.get("repeat_end")  # date string YYYY-MM-DD or None
-    invitee_emails = [e.strip().lower() for e in body.get("invitees", []) if e.strip()]
+    title              = body.get("title", "Scheduled Meeting").strip() or "Scheduled Meeting"
+    start_str          = body.get("start")
+    end_str            = body.get("end")
+    is_all_day         = body.get("all_day", False)
+    repeat             = body.get("repeat", "none")
+    repeat_end         = body.get("repeat_end")
+    invitee_emails     = [e.strip().lower() for e in body.get("invitees", []) if e.strip()]
+    require_admission  = bool(body.get("require_admission", False))   # ← NEW
 
     room_name = secrets.token_hex(32)
     meeting = Meeting.objects.create(
@@ -380,6 +609,7 @@ def schedule_meeting(request):
         is_scheduled=True,
         is_all_day=is_all_day,
         repeat=repeat,
+        require_admission=require_admission,  # ← NEW
     )
 
     if start_str:
@@ -395,15 +625,11 @@ def schedule_meeting(request):
     meeting.meeting_url = _build_meeting_url(request, room_name)
     meeting.save()
 
-    # Save invitees
     for email in invitee_emails:
         MeetingInvitee.objects.get_or_create(meeting=meeting, email=email)
 
-    # Create group chat for this meeting
     chat = MeetingChat.objects.create(meeting=meeting)
-    # Add host
     MeetingChatMember.objects.create(chat=chat, user=request.user)
-    # Add registered invitees (match by email)
     from django.contrib.auth import get_user_model
     User = get_user_model()
     for email in invitee_emails:
@@ -411,9 +637,8 @@ def schedule_meeting(request):
             u = User.objects.get(email=email)
             MeetingChatMember.objects.get_or_create(chat=chat, user=u)
         except User.DoesNotExist:
-            pass  # external — will join when they register/click link
+            pass
 
-    # Send invite emails
     send_meeting_invite(meeting, invitee_emails)
 
     return JsonResponse({
@@ -426,12 +651,11 @@ def schedule_meeting(request):
 
 
 ######################################################
-# CHAT VIEWS
+# CHAT VIEWS  (unchanged — kept for completeness)
 ######################################################
 
 @login_required
 def chat_list(request):
-    """Return all chats the user is a member of (not deleted for self)."""
     memberships = MeetingChatMember.objects.filter(
         user=request.user,
         deleted_for_self=False,
@@ -456,14 +680,13 @@ def chat_list(request):
 def chat_messages(request, chat_id):
     chat = get_object_or_404(MeetingChat, id=chat_id)
 
-    # Make sure user is a member
     member = MeetingChatMember.objects.filter(
         chat=chat, user=request.user, is_removed=False
     ).first()
     if not member:
         return JsonResponse({"error": "Not a member"}, status=403)
 
-    messages = chat.messages.exclude(
+    msgs = chat.messages.exclude(
         deleted_by=request.user
     ).order_by('sent_at').values(
         'id', 'sender__name', 'sender_id', 'text', 'sent_at'
@@ -476,13 +699,13 @@ def chat_messages(request, chat_id):
     return JsonResponse({
         "messages": [
             {
-                "id":        m['id'],
-                "sender":    m['sender__name'],
-                "is_me":     m['sender_id'] == request.user.id,
-                "text":      m['text'],
-                "sent_at":   m['sent_at'].isoformat(),
+                "id":      m['id'],
+                "sender":  m['sender__name'],
+                "is_me":   m['sender_id'] == request.user.id,
+                "text":    m['text'],
+                "sent_at": m['sent_at'].isoformat(),
             }
-            for m in messages
+            for m in msgs
         ],
         "members": [
             {"id": mb.user.id, "name": mb.user.name, "email": mb.user.email}
@@ -515,7 +738,6 @@ def chat_send(request, chat_id):
 @login_required
 @require_POST
 def chat_delete_for_me(request, chat_id):
-    """User hides the chat from their view — others still see it."""
     membership = get_object_or_404(MeetingChatMember, chat_id=chat_id, user=request.user)
     membership.deleted_for_self = True
     membership.save(update_fields=['deleted_for_self'])
@@ -543,7 +765,6 @@ def chat_add_member(request, chat_id):
         mb.is_removed = False
         mb.deleted_for_self = False
         mb.save()
-    # Also save as invitee
     MeetingInvitee.objects.get_or_create(meeting=chat.meeting, email=email)
     return JsonResponse({"status": "added", "name": user.name})
 
@@ -563,13 +784,12 @@ def chat_remove_member(request, chat_id, user_id):
 
 @login_required
 def all_meetings_page(request):
-    """Dedicated page that shows all scheduled meetings for the current user."""
     return render(request, "meetings/all_meetings.html")
 
 
 @login_required
 def scheduled_meetings_for_date(request):
-    from datetime import date, datetime, timedelta
+    from datetime import date, timedelta
 
     date_str = request.GET.get("date")
     try:
@@ -577,8 +797,7 @@ def scheduled_meetings_for_date(request):
     except ValueError:
         return JsonResponse({"error": "Invalid date"}, status=400)
 
-    # Hosted by user OR invited
-    hosted = Meeting.objects.filter(host=request.user, is_scheduled=True)
+    hosted  = Meeting.objects.filter(host=request.user, is_scheduled=True)
     invited = Meeting.objects.filter(
         is_scheduled=True,
         invitees__email=request.user.email,
@@ -593,89 +812,56 @@ def scheduled_meetings_for_date(request):
 
         orig_date = m.scheduled_start.date()
         repeat    = m.repeat or 'none'
-        rep_end   = m.repeat_end_date  # date or None
+        rep_end   = m.repeat_end_date
 
-        # Check if this meeting occurs on target_date
         occurs = False
-
         if repeat == 'none':
             occurs = (orig_date == target_date)
-
         elif repeat == 'daily':
-            occurs = (
-                target_date >= orig_date and
-                (rep_end is None or target_date <= rep_end)
-            )
-
+            occurs = (target_date >= orig_date and (rep_end is None or target_date <= rep_end))
         elif repeat == 'weekday':
-            occurs = (
-                target_date >= orig_date and
-                target_date.weekday() < 5 and          # Mon–Fri
-                (rep_end is None or target_date <= rep_end)
-            )
-
+            occurs = (target_date >= orig_date and target_date.weekday() < 5 and (rep_end is None or target_date <= rep_end))
         elif repeat == 'weekly':
             delta = (target_date - orig_date).days
-            occurs = (
-                target_date >= orig_date and
-                delta % 7 == 0 and
-                (rep_end is None or target_date <= rep_end)
-            )
-
+            occurs = (target_date >= orig_date and delta % 7 == 0 and (rep_end is None or target_date <= rep_end))
         elif repeat == 'monthly':
-            occurs = (
-                target_date >= orig_date and
-                target_date.day == orig_date.day and
-                (rep_end is None or target_date <= rep_end)
-            )
-
+            occurs = (target_date >= orig_date and target_date.day == orig_date.day and (rep_end is None or target_date <= rep_end))
         elif repeat == 'yearly':
-            occurs = (
-                target_date >= orig_date and
-                target_date.day   == orig_date.day and
-                target_date.month == orig_date.month and
-                (rep_end is None or target_date <= rep_end)
-            )
+            occurs = (target_date >= orig_date and target_date.day == orig_date.day and target_date.month == orig_date.month and (rep_end is None or target_date <= rep_end))
 
         if not occurs:
             continue
 
-        # Build adjusted start/end for the target date
         if m.is_all_day or repeat == 'none':
             adj_start = m.scheduled_start
             adj_end   = m.scheduled_end
         else:
-            # Shift time to target_date, keeping original clock time
             from django.utils import timezone as tz
-            orig_start = m.scheduled_start
-            orig_end   = m.scheduled_end
-
             def shift_to(dt, new_date):
-                if dt is None:
-                    return None
+                if dt is None: return None
                 delta_days = (new_date - orig_date).days
                 return dt + timedelta(days=delta_days)
-
-            adj_start = shift_to(orig_start, target_date)
-            adj_end   = shift_to(orig_end,   target_date)
+            adj_start = shift_to(m.scheduled_start, target_date)
+            adj_end   = shift_to(m.scheduled_end,   target_date)
 
         result.append({
-            "id":          m.id,
-            "title":       m.title,
-            "meeting_id":  m.meeting_id,
-            "passcode":    m.passcode,
-            "room_name":   m.room_name,
-            "meeting_url": m.meeting_url,
-            "start":       adj_start.isoformat() if adj_start else None,
-            "end":         adj_end.isoformat()   if adj_end   else None,
+            "id":             m.id,
+            "title":          m.title,
+            "meeting_id":     m.meeting_id,
+            "passcode":       m.passcode,
+            "room_name":      m.room_name,
+            "meeting_url":    m.meeting_url,
+            "start":          adj_start.isoformat() if adj_start else None,
+            "end":            adj_end.isoformat()   if adj_end   else None,
             "original_start": m.scheduled_start.isoformat() if m.scheduled_start else None,
             "original_end":   m.scheduled_end.isoformat()   if m.scheduled_end   else None,
-            "is_all_day":    m.is_all_day,
-            "repeat":        m.repeat,
+            "is_all_day":     m.is_all_day,
+            "require_admission": m.require_admission,
+            "repeat":         m.repeat,
             "repeat_end_date": m.repeat_end_date.isoformat() if m.repeat_end_date else None,
-            "is_host":       m.host == request.user,
-            "is_active":     m.is_active,
-            "invitees":      list(m.invitees.values_list('email', flat=True)),
+            "is_host":        m.host == request.user,
+            "is_active":      m.is_active,
+            "invitees":       list(m.invitees.values_list('email', flat=True)),
         })
 
     result.sort(key=lambda x: x['start'] or '')
@@ -684,41 +870,28 @@ def scheduled_meetings_for_date(request):
 
 @login_required
 def all_scheduled_meetings(request):
-    """
-    GET /meeting/all-scheduled/
-    Returns ALL scheduled meetings for the current user (hosted + invited), grouped or flat.
-    """
-    # Meetings hosted by user
-    hosted = Meeting.objects.filter(
-        host=request.user,
-        is_scheduled=True,
-    )
-
-    # Meetings where user is an invitee
-    invited = Meeting.objects.filter(
-        is_scheduled=True,
-        invitees__email=request.user.email,
-    ).exclude(host=request.user)
-
+    hosted  = Meeting.objects.filter(host=request.user, is_scheduled=True)
+    invited = Meeting.objects.filter(is_scheduled=True, invitees__email=request.user.email).exclude(host=request.user)
     all_meetings = (hosted | invited).distinct().order_by('scheduled_start')
 
     result = []
     for m in all_meetings:
         result.append({
-            "id":          m.id,
-            "title":       m.title,
-            "meeting_id":  m.meeting_id,
-            "passcode":    m.passcode,
-            "room_name":   m.room_name,
-            "meeting_url": m.meeting_url,
-            "start":       m.scheduled_start.isoformat() if m.scheduled_start else None,
-            "end":         m.scheduled_end.isoformat()   if m.scheduled_end   else None,
-            "is_all_day":  m.is_all_day,
-            "repeat":      m.repeat,
+            "id":             m.id,
+            "title":          m.title,
+            "meeting_id":     m.meeting_id,
+            "passcode":       m.passcode,
+            "room_name":      m.room_name,
+            "meeting_url":    m.meeting_url,
+            "start":          m.scheduled_start.isoformat() if m.scheduled_start else None,
+            "end":            m.scheduled_end.isoformat()   if m.scheduled_end   else None,
+            "is_all_day":     m.is_all_day,
+            "require_admission": m.require_admission,
+            "repeat":         m.repeat,
             "repeat_end_date": m.repeat_end_date.isoformat() if m.repeat_end_date else None,
-            "is_host":     m.host == request.user,
-            "is_active":   m.is_active,
-            "invitees":    list(m.invitees.values_list('email', flat=True)),
+            "is_host":        m.host == request.user,
+            "is_active":      m.is_active,
+            "invitees":       list(m.invitees.values_list('email', flat=True)),
         })
 
     return JsonResponse({"meetings": result})
@@ -727,10 +900,6 @@ def all_scheduled_meetings(request):
 @login_required
 @require_POST
 def edit_meeting(request, meeting_id):
-    """
-    POST /meeting/edit/<id>/
-    Host can update title, start, end, repeat, invitees.
-    """
     meeting = get_object_or_404(Meeting, id=meeting_id, host=request.user)
 
     try:
@@ -738,17 +907,19 @@ def edit_meeting(request, meeting_id):
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    title      = body.get("title", meeting.title).strip() or meeting.title
-    start_str  = body.get("start")
-    end_str    = body.get("end")
-    is_all_day = body.get("all_day", meeting.is_all_day)
-    repeat     = body.get("repeat", meeting.repeat)
-    repeat_end = body.get("repeat_end")
-    invitee_emails = [e.strip().lower() for e in body.get("invitees", []) if e.strip()]
+    title             = body.get("title", meeting.title).strip() or meeting.title
+    start_str         = body.get("start")
+    end_str           = body.get("end")
+    is_all_day        = body.get("all_day", meeting.is_all_day)
+    repeat            = body.get("repeat", meeting.repeat)
+    repeat_end        = body.get("repeat_end")
+    invitee_emails    = [e.strip().lower() for e in body.get("invitees", []) if e.strip()]
+    require_admission = body.get("require_admission", meeting.require_admission)  # ← NEW
 
-    meeting.title      = title
-    meeting.is_all_day = is_all_day
-    meeting.repeat     = repeat
+    meeting.title             = title
+    meeting.is_all_day        = is_all_day
+    meeting.repeat            = repeat
+    meeting.require_admission = bool(require_admission)  # ← NEW
 
     if start_str:
         dt = parse_datetime(start_str)
@@ -763,16 +934,13 @@ def edit_meeting(request, meeting_id):
         meeting.repeat_end_date = date.fromisoformat(repeat_end)
     else:
         meeting.repeat_end_date = None
-    
 
     meeting.save()
 
-    # Update invitees — replace list
     meeting.invitees.all().delete()
     for email in invitee_emails:
         MeetingInvitee.objects.get_or_create(meeting=meeting, email=email)
 
-    # Sync chat members
     try:
         chat = meeting.chat
         for email in invitee_emails:
@@ -791,7 +959,7 @@ def edit_meeting(request, meeting_id):
     return JsonResponse({"status": "updated"})
 
 
-@csrf_exempt  
+@csrf_exempt
 @login_required
 @require_POST
 def deactivate_meeting(request, room_name):
@@ -802,29 +970,18 @@ def deactivate_meeting(request, room_name):
     return JsonResponse({"status": "ok"})
 
 
-
-
 @login_required
 @require_POST
 def delete_meeting(request, meeting_id):
-    """
-    POST /meeting/delete/<id>/
-    Host can delete their scheduled meeting.
-    """
     meeting = get_object_or_404(Meeting, id=meeting_id, host=request.user)
     meeting.delete()
     return JsonResponse({"status": "deleted"})
 
 
-# ── CHAT POLL (real-time new messages since a timestamp) ─────────────────────
-
 @login_required
 def chat_poll(request, chat_id):
-    """GET /meeting/chat/<id>/poll/?since=<iso>  — returns only NEW messages."""
     chat   = get_object_or_404(MeetingChat, id=chat_id)
-    member = MeetingChatMember.objects.filter(
-        chat=chat, user=request.user, is_removed=False
-    ).first()
+    member = MeetingChatMember.objects.filter(chat=chat, user=request.user, is_removed=False).first()
     if not member:
         return JsonResponse({"error": "Not a member"}, status=403)
 
@@ -839,58 +996,36 @@ def chat_poll(request, chat_id):
         except Exception:
             pass
 
-    msgs = qs.order_by("sent_at").values(
-        "id", "sender__name", "sender_id", "text", "sent_at"
-    )
+    msgs = qs.order_by("sent_at").values("id", "sender__name", "sender_id", "text", "sent_at")
     return JsonResponse({
         "messages": [
-            {
-                "id":      m["id"],
-                "sender":  m["sender__name"],
-                "is_me":   m["sender_id"] == request.user.id,
-                "text":    m["text"],
-                "sent_at": m["sent_at"].isoformat(),
-            }
+            {"id": m["id"], "sender": m["sender__name"], "is_me": m["sender_id"] == request.user.id,
+             "text": m["text"], "sent_at": m["sent_at"].isoformat()}
             for m in msgs
         ]
     })
 
-
-# ── CHAT PAGE ─────────────────────────────────────────────────────────────────
 
 @login_required
 def chat_page(request):
     return render(request, "meetings/chat.html")
 
 
-# ── DIRECT MESSAGE VIEWS ──────────────────────────────────────────────────────
-
 @login_required
 def dm_list(request):
-    """GET /meeting/dm/  — list all DM conversations for the current user."""
-    participations = DirectChatParticipant.objects.filter(
-        user=request.user
-    ).select_related('chat')
-
+    participations = DirectChatParticipant.objects.filter(user=request.user).select_related('chat')
     result = []
     for p in participations:
         dm    = p.chat
         other = dm.participations.exclude(user=request.user).select_related('user').first()
-        if not other:
-            continue
+        if not other: continue
         last = dm.messages.filter(is_deleted=False).order_by('-sent_at').first()
         result.append({
-            "dm_id":      dm.id,
-            "other_user": {
-                "id":    other.user.id,
-                "name":  other.user.name,
-                "email": other.user.email,
-            },
-            "last_message": last.text      if last else "",
+            "dm_id":        dm.id,
+            "other_user":   {"id": other.user.id, "name": other.user.name, "email": other.user.email},
+            "last_message": last.text if last else "",
             "last_at":      last.sent_at.isoformat() if last else "",
         })
-
-    # Sort most recent first
     result.sort(key=lambda x: x["last_at"] or "", reverse=True)
     return JsonResponse({"dms": result})
 
@@ -898,7 +1033,6 @@ def dm_list(request):
 @login_required
 @require_POST
 def dm_get_or_create(request):
-    """POST /meeting/dm/get-or-create/  {user_id}  — get or create a DM thread."""
     try:
         body = json.loads(request.body)
     except Exception:
@@ -915,14 +1049,12 @@ def dm_get_or_create(request):
     if other_user == request.user:
         return JsonResponse({"error": "Cannot DM yourself"}, status=400)
 
-    # Find existing DM between these two users
     my_dm_ids    = DirectChatParticipant.objects.filter(user=request.user).values_list('chat_id', flat=True)
     other_dm_ids = DirectChatParticipant.objects.filter(user=other_user).values_list('chat_id', flat=True)
     shared       = set(my_dm_ids) & set(other_dm_ids)
 
     if shared:
-        dm_id = list(shared)[0]
-        return JsonResponse({"dm_id": dm_id, "created": False})
+        return JsonResponse({"dm_id": list(shared)[0], "created": False})
 
     dm = DirectChat.objects.create()
     DirectChatParticipant.objects.create(chat=dm, user=request.user)
@@ -932,7 +1064,6 @@ def dm_get_or_create(request):
 
 @login_required
 def dm_messages(request, dm_id):
-    """GET /meeting/dm/<id>/  — messages (supports ?since= for polling)."""
     dm = get_object_or_404(DirectChat, id=dm_id)
     if not dm.participations.filter(user=request.user).exists():
         return JsonResponse({"error": "Not a participant"}, status=403)
@@ -943,58 +1074,41 @@ def dm_messages(request, dm_id):
         try:
             from django.utils.dateparse import parse_datetime as _pd
             dt = _pd(since)
-            if dt:
-                qs = qs.filter(sent_at__gt=dt)
+            if dt: qs = qs.filter(sent_at__gt=dt)
         except Exception:
             pass
 
     msgs  = qs.order_by("sent_at").select_related("sender")
     other = dm.participations.exclude(user=request.user).select_related("user").first()
-
     return JsonResponse({
         "messages": [
-            {
-                "id":      m.id,
-                "sender":  m.sender.name,
-                "is_me":   m.sender_id == request.user.id,
-                "text":    m.text,
-                "sent_at": m.sent_at.isoformat(),
-            }
+            {"id": m.id, "sender": m.sender.name, "is_me": m.sender_id == request.user.id,
+             "text": m.text, "sent_at": m.sent_at.isoformat()}
             for m in msgs
         ],
-        "other_user": {
-            "id":   other.user.id,
-            "name": other.user.name,
-        } if other else None,
+        "other_user": {"id": other.user.id, "name": other.user.name} if other else None,
     })
 
 
 @login_required
 @require_POST
 def dm_send(request, dm_id):
-    """POST /meeting/dm/<id>/send/  {text}  — send a DM."""
     dm = get_object_or_404(DirectChat, id=dm_id)
     if not dm.participations.filter(user=request.user).exists():
         return JsonResponse({"error": "Not a participant"}, status=403)
-
     try:
         body = json.loads(request.body)
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-
     text = body.get("text", "").strip()
     if not text:
         return JsonResponse({"error": "Empty message"}, status=400)
-
     msg = DirectChatMessage.objects.create(chat=dm, sender=request.user, text=text)
     return JsonResponse({"id": msg.id, "sent_at": msg.sent_at.isoformat()})
 
 
-# ── USER SEARCH (for starting DMs) ───────────────────────────────────────────
-
 @login_required
 def search_users(request):
-    """GET /meeting/users/search/?q=<query>"""
     q = request.GET.get("q", "").strip()
     if len(q) < 2:
         return JsonResponse({"users": []})
@@ -1002,42 +1116,25 @@ def search_users(request):
     from django.contrib.auth import get_user_model
     from django.db.models import Q
     User = get_user_model()
+    users = User.objects.filter(Q(name__icontains=q) | Q(email__icontains=q)).exclude(pk=request.user.pk)[:10]
+    return JsonResponse({"users": [{"id": u.id, "name": u.name, "email": u.email} for u in users]})
 
-    users = User.objects.filter(
-        Q(name__icontains=q) | Q(email__icontains=q)
-    ).exclude(pk=request.user.pk)[:10]
 
-    return JsonResponse({
-        "users": [
-            {"id": u.id, "name": u.name, "email": u.email}
-            for u in users
-        ]
-    })
-    
-    
-    
-@login_required   # ← add this missing decorator
+@login_required
 def settings_page(request):
     user = request.user
 
     if request.method == "POST":
-
-        # ==========================
-        # 🔐 PASSWORD FORM
-        # ==========================
         if "password_form" in request.POST:
             new_password     = request.POST.get("new_password", "").strip()
             confirm_password = request.POST.get("confirm_password", "").strip()
             current_password = request.POST.get("current_password", "").strip()
-
             if not new_password:
                 messages.error(request, "New password cannot be empty.")
                 return redirect("meetings:settings_page")
-
             if new_password != confirm_password:
                 messages.error(request, "Passwords do not match.")
                 return redirect("meetings:settings_page")
-
             if user.has_usable_password():
                 if not current_password:
                     messages.error(request, "Current password is required.")
@@ -1045,26 +1142,19 @@ def settings_page(request):
                 if not check_password(current_password, user.password):
                     messages.error(request, "Current password is incorrect.")
                     return redirect("meetings:settings_page")
-
             user.set_password(new_password)
             user.save()
             update_session_auth_hash(request, user)
             messages.success(request, "Password updated successfully.")
             return redirect("meetings:settings_page")
 
-        # ==========================
-        # 🖼 REMOVE PHOTO
-        # ==========================
         if "remove_photo" in request.POST:
             if user.user_profile_picture:
                 user.user_profile_picture.delete(save=False)
                 user.user_profile_picture = None
                 user.save()
-            return redirect("meetings:settings_page")  # ← fixed typo "mettings"
+            return redirect("meetings:settings_page")
 
-        # ==========================
-        # 👤 PROFILE UPDATE
-        # ==========================
         if request.FILES.get("profile_picture"):
             profile_file = request.FILES["profile_picture"]
             if user.user_profile_picture:
@@ -1077,22 +1167,16 @@ def settings_page(request):
         messages.success(request, "Profile updated successfully.")
         return redirect("meetings:settings_page")
 
-    # ==========================
-    # GET — build profile URL safely
-    # ==========================
     profile_image_url = None
     if user.user_profile_picture:
         try:
-            profile_image_url = user.user_profile_picture.url  # ← .url not the field
+            profile_image_url = user.user_profile_picture.url
         except Exception:
             profile_image_url = None
 
-    return render(request, "meetings/settings.html", {
-        "profile_image_url": profile_image_url,
-    })
-    
-    
-    
+    return render(request, "meetings/settings.html", {"profile_image_url": profile_image_url})
+
+
 @login_required
 @require_POST
 def save_transcript(request):
@@ -1103,9 +1187,7 @@ def save_transcript(request):
         return JsonResponse({'error': 'Missing data'}, status=400)
     try:
         meeting = Meeting.objects.get(room_name=room_name)
-        transcript = MeetingTranscript.objects.create(
-            meeting=meeting, file=file, duration_seconds=duration
-        )
+        transcript = MeetingTranscript.objects.create(meeting=meeting, file=file, duration_seconds=duration)
         return JsonResponse({'url': transcript.file.url, 'id': transcript.id})
     except Meeting.DoesNotExist:
         return JsonResponse({'error': 'Meeting not found'}, status=404)
