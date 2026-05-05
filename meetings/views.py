@@ -71,6 +71,30 @@ def get_token(request, room_name):
 
     display_name = request.GET.get("display_name", "").strip() or request.user.name
 
+    # Resolve plan limits
+    max_participants, max_duration_minutes = _get_plan_limits(request.user)
+    features = _get_plan_features(request.user)
+    sub = _get_or_create_subscription(request.user)
+    plan_name = sub.effective_plan.name if sub else "free"
+
+    # ── Capacity check (skip for host) ───────────────────────────────────────
+    if meeting.host != request.user and meeting.max_participants and meeting.max_participants > 0:
+        current_count = _get_livekit_participant_count(room_name)
+        if current_count >= meeting.max_participants:
+            # Register user in capacity queue (first-come-first-served)
+            _enqueue_capacity_waiter(meeting, request.user, display_name)
+            return JsonResponse(
+                {
+                    "code":  "MEETING_FULL",
+                    "limit": meeting.max_participants,
+                    "queue_position": _get_queue_position(meeting, request.user),
+                },
+                status=403,
+            )
+
+    # If user was in capacity queue but space opened, remove them
+    _dequeue_capacity_waiter(meeting, request.user)
+
     token = AccessToken(
         api_key=settings.LIVEKIT_API_KEY,
         api_secret=settings.LIVEKIT_API_SECRET,
@@ -86,11 +110,161 @@ def get_token(request, room_name):
     ))
 
     return JsonResponse({
-        "token": token.to_jwt(),
-        "livekit_url": settings.LIVEKIT_URL,
-        "room_name": room_name,
-        "user_name": display_name,
-        "is_host": meeting.host == request.user,
+        "token":                 token.to_jwt(),
+        "livekit_url":           settings.LIVEKIT_URL,
+        "room_name":             room_name,
+        "user_name":             display_name,
+        "is_host":               meeting.host == request.user,
+        "activated_at":          meeting.activated_at.isoformat() if meeting.activated_at else "",
+        "max_duration_minutes":  meeting.max_duration_minutes,
+        "max_participants":      meeting.max_participants,
+        "can_record":            features["can_record"],
+        "plan_name":             plan_name,
+        "only_host_audio":       meeting.only_host_audio,
+        "only_host_video":       meeting.only_host_video,
+        "only_host_chat":        meeting.only_host_chat,
+        "only_host_screenshare": meeting.only_host_screenshare,
+    })
+    
+    
+    
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: Capacity queue helpers  (add near the bottom of views.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_livekit_participant_count(room_name):
+    """
+    Returns the current number of participants in the LiveKit room.
+    Returns 0 on any error so we fail open (don't block entry on API failure).
+    """
+    import asyncio as _asyncio
+
+    async def _count():
+        try:
+            async with LiveKitAPI(
+                url=settings.LIVEKIT_URL,
+                api_key=settings.LIVEKIT_API_KEY,
+                api_secret=settings.LIVEKIT_API_SECRET,
+            ) as lk:
+                res = await lk.room.list_participants(
+                    ListParticipantsRequest(room=room_name)
+                )
+                return len(res.participants)
+        except Exception:
+            return 0
+
+    try:
+        loop = _asyncio.new_event_loop()
+        count = loop.run_until_complete(_count())
+        loop.close()
+        return count
+    except Exception:
+        return 0
+
+
+def _enqueue_capacity_waiter(meeting, user, display_name=""):
+    """Add user to capacity queue if not already there."""
+    from .models import MeetingCapacityQueue
+    MeetingCapacityQueue.objects.get_or_create(
+        meeting=meeting,
+        user=user,
+        defaults={"display_name": display_name or user.name},
+    )
+
+
+def _dequeue_capacity_waiter(meeting, user):
+    """Remove user from capacity queue (they got in)."""
+    from .models import MeetingCapacityQueue
+    MeetingCapacityQueue.objects.filter(meeting=meeting, user=user).delete()
+
+
+def _get_queue_position(meeting, user):
+    """1-based queue position for the user, or None if not in queue."""
+    from .models import MeetingCapacityQueue
+    try:
+        entry = MeetingCapacityQueue.objects.get(meeting=meeting, user=user)
+        position = MeetingCapacityQueue.objects.filter(
+            meeting=meeting,
+            created_at__lte=entry.created_at,
+        ).count()
+        return position
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW VIEW: capacity_status  — polled by waiting users
+# GET /meeting/capacity-status/<room_name>/
+# Returns: { full, queue_position, space_available }
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def capacity_status(request, room_name):
+    from .models import MeetingCapacityQueue
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+
+    current_count = _get_livekit_participant_count(room_name)
+    limit = meeting.max_participants or 0
+    is_full = limit > 0 and current_count >= limit
+
+    # Check if this user is queued
+    queue_entry = MeetingCapacityQueue.objects.filter(
+        meeting=meeting, user=request.user
+    ).first()
+
+    queue_position = None
+    if queue_entry:
+        queue_position = MeetingCapacityQueue.objects.filter(
+            meeting=meeting,
+            created_at__lte=queue_entry.created_at,
+        ).count()
+
+    # Is this the next person in line and there's now space?
+    space_available = False
+    if queue_entry and not is_full:
+        # Is this user at the front of the queue?
+        first_in_queue = MeetingCapacityQueue.objects.filter(
+            meeting=meeting
+        ).order_by("created_at").first()
+        if first_in_queue and first_in_queue.user_id == request.user.id:
+            space_available = True
+
+    return JsonResponse({
+        "full":            is_full,
+        "current_count":   current_count,
+        "limit":           limit,
+        "queue_position":  queue_position,
+        "space_available": space_available,
+        "meeting_active":  meeting.is_active,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW VIEW: capacity_queue_list  — host sees who is queued
+# GET /meeting/capacity-queue/<room_name>/
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def capacity_queue_list(request, room_name):
+    from .models import MeetingCapacityQueue
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({"error": "Host only"}, status=403)
+
+    queue = MeetingCapacityQueue.objects.filter(
+        meeting=meeting
+    ).select_related("user").order_by("created_at")
+
+    return JsonResponse({
+        "queue": [
+            {
+                "user_id":      q.user.id,
+                "display_name": q.display_name or q.user.name,
+                "position":     idx + 1,
+                "joined_at":    q.created_at.isoformat(),
+            }
+            for idx, q in enumerate(queue)
+        ]
     })
 
 
@@ -114,16 +288,45 @@ def room(request, room_name):
 
     # ── Host activates meeting on entry ──────────────────────────────────────
     if is_host:
-        if not meeting.is_active:
-            meeting.is_active = True
-            meeting.save(update_fields=["is_active"])
+        update_fields = ["is_active"]
+        meeting.is_active = True
+        # Only set activated_at ONCE, never overwrite it
+        if not meeting.activated_at:
+            meeting.activated_at = timezone.now()
+            update_fields.append("activated_at")
+        meeting.save(update_fields=update_fields)
+
+        # Resolve plan limits
+        max_participants, max_duration_minutes = _get_plan_limits(request.user)
+        features = _get_plan_features(request.user)
+
+        # Snapshot limits onto meeting if not already set from creation
+        # (guards against plan changes after meeting was created)
+        meeting.max_participants = max_participants
+        meeting.max_duration_minutes = max_duration_minutes
+        meeting.save(update_fields=["max_participants", "max_duration_minutes"])
+
         chat = _ensure_meeting_chat(meeting, request.user)
+
+        sub = _get_or_create_subscription(request.user)
+        plan_name = sub.effective_plan.name if sub else "free"
+
         return render(request, "meetings/room.html", {
-            "meeting":     meeting,
-            "room_name":   room_name,
-            "is_host":     True,
-            "meeting_url": meeting.meeting_url,
-            "chat_id":     chat.id,
+            "meeting":               meeting,
+            "room_name":             room_name,
+            "is_host":               True,
+            "meeting_url":           meeting.meeting_url,
+            "chat_id":               chat.id,
+            "max_participants":      max_participants,
+            "max_duration_minutes":  max_duration_minutes,
+            "can_record":            features["can_record"],
+            "plan_name":             plan_name,
+            "only_host_audio":       meeting.only_host_audio,
+            "only_host_video":       meeting.only_host_video,
+            "only_host_chat":        meeting.only_host_chat,
+            "only_host_screenshare": meeting.only_host_screenshare,
+            # Pass ISO string so JS timer syncs to server clock, not local clock
+            "activated_at_iso":      meeting.activated_at.isoformat() if meeting.activated_at else "",
         })
 
     # ── Non-host: meeting not started yet → waiting room ─────────────────────
@@ -134,9 +337,11 @@ def room(request, room_name):
             or request.user.name
         )
         return render(request, "meetings/waiting_room.html", {
-            "meeting":      meeting,
-            "room_name":    room_name,
-            "display_name": display_name,
+            "meeting":           meeting,
+            "room_name":         room_name,
+            "display_name":      display_name,
+            "only_host_audio":   meeting.only_host_audio,   # ADD
+            "only_host_video":   meeting.only_host_video,   # ADD
         })
 
     # ── Non-host: meeting is active but requires admission ───────────────────
@@ -162,9 +367,11 @@ def room(request, room_name):
                     status='waiting',
                 )
             return render(request, "meetings/waiting_room.html", {
-                "meeting":      meeting,
-                "room_name":    room_name,
-                "display_name": display_name,
+                "meeting":           meeting,
+                "room_name":         room_name,
+                "display_name":      display_name,
+                "only_host_audio":   meeting.only_host_audio,   # ADD
+                "only_host_video":   meeting.only_host_video,   # ADD
             })
 
         elif knock.status == 'denied':
@@ -172,15 +379,39 @@ def room(request, room_name):
             return redirect('meetings:dashboard')
 
         # admitted → fall through to normal room render
+        
+    if request.GET.get('queued') == '1':
+        display_name = (
+            request.GET.get("display_name", "").strip()
+            or request.session.get("join_display_name", "")
+            or request.user.name
+        )
+        return render(request, "meetings/waiting_room.html", {
+            "meeting":           meeting,
+            "room_name":         room_name,
+            "display_name":      display_name,
+            "start_in_queue":    True,
+            "only_host_audio":   meeting.only_host_audio,   # ADD
+            "only_host_video":   meeting.only_host_video,   # ADD
+        })
 
     # ── Non-host: enter meeting ───────────────────────────────────────────────
     chat = _ensure_meeting_chat(meeting, request.user)
     return render(request, "meetings/room.html", {
-        "meeting":     meeting,
-        "room_name":   room_name,
-        "is_host":     False,
-        "meeting_url": meeting.meeting_url,
-        "chat_id":     chat.id,
+        "meeting":               meeting,
+        "room_name":             room_name,
+        "is_host":               False,
+        "meeting_url":           meeting.meeting_url,
+        "chat_id":               chat.id,
+        "only_host_audio":       meeting.only_host_audio,
+        "only_host_video":       meeting.only_host_video,
+        "only_host_chat":        meeting.only_host_chat,
+        "only_host_screenshare": meeting.only_host_screenshare,
+        "activated_at_iso":      meeting.activated_at.isoformat() if meeting.activated_at else "",
+        "max_participants":      meeting.max_participants or 0,
+        "max_duration_minutes":  meeting.max_duration_minutes or 0,
+        "can_record":            False,
+        "plan_name":             "",
     })
 
 
@@ -197,9 +428,11 @@ def waiting_room(request, room_name):
         or request.user.name
     )
     return render(request, "meetings/waiting_room.html", {
-        "meeting":      meeting,
-        "room_name":    room_name,
-        "display_name": display_name,
+        "meeting":           meeting,
+        "room_name":         room_name,
+        "display_name":      display_name,
+        "only_host_audio":   meeting.only_host_audio,   # ADD
+        "only_host_video":   meeting.only_host_video,   # ADD
     })
 
 
@@ -458,10 +691,12 @@ def end_meeting(request, room_name):
         return JsonResponse({"error": "Meeting not found"}, status=404)
 
     meeting.is_active = False
-    meeting.save(update_fields=["is_active"])
+    meeting.activated_at = None  # Reset so the next session starts fresh
+    meeting.save(update_fields=["is_active", "activated_at"])
 
     # Clean up waiting room knocks
     WaitingRoomKnock.objects.filter(meeting=meeting).delete()
+    MeetingCapacityQueue.objects.filter(meeting=meeting).delete()
 
     async def _end_livekit():
         import asyncio as _asyncio
@@ -600,6 +835,10 @@ def schedule_meeting(request):
     repeat_end         = body.get("repeat_end")
     invitee_emails     = [e.strip().lower() for e in body.get("invitees", []) if e.strip()]
     require_admission  = bool(body.get("require_admission", False))   # ← NEW
+    only_host_audio       = bool(body.get("only_host_audio", False))
+    only_host_video       = bool(body.get("only_host_video", False))
+    only_host_chat        = bool(body.get("only_host_chat", False))
+    only_host_screenshare = bool(body.get("only_host_screenshare", False))
 
     room_name = secrets.token_hex(32)
     meeting = Meeting.objects.create(
@@ -610,6 +849,10 @@ def schedule_meeting(request):
         is_all_day=is_all_day,
         repeat=repeat,
         require_admission=require_admission,  # ← NEW
+        only_host_audio=only_host_audio,
+        only_host_video=only_host_video,
+        only_host_chat=only_host_chat,
+        only_host_screenshare=only_host_screenshare,
     )
 
     if start_str:
@@ -861,6 +1104,10 @@ def scheduled_meetings_for_date(request):
             "repeat_end_date": m.repeat_end_date.isoformat() if m.repeat_end_date else None,
             "is_host":        m.host == request.user,
             "is_active":      m.is_active,
+            "only_host_audio": m.only_host_audio,
+            "only_host_video": m.only_host_video,
+            "only_host_chat": m.only_host_chat,
+            "only_host_screenshare": m.only_host_screenshare,
             "invitees":       list(m.invitees.values_list('email', flat=True)),
         })
 
@@ -891,6 +1138,10 @@ def all_scheduled_meetings(request):
             "repeat_end_date": m.repeat_end_date.isoformat() if m.repeat_end_date else None,
             "is_host":        m.host == request.user,
             "is_active":      m.is_active,
+            "only_host_audio": m.only_host_audio,
+            "only_host_video": m.only_host_video,
+            "only_host_chat": m.only_host_chat,
+            "only_host_screenshare": m.only_host_screenshare,
             "invitees":       list(m.invitees.values_list('email', flat=True)),
         })
 
@@ -915,11 +1166,19 @@ def edit_meeting(request, meeting_id):
     repeat_end        = body.get("repeat_end")
     invitee_emails    = [e.strip().lower() for e in body.get("invitees", []) if e.strip()]
     require_admission = body.get("require_admission", meeting.require_admission)  # ← NEW
+    only_host_audio       = body.get("only_host_audio", meeting.only_host_audio)
+    only_host_video       = body.get("only_host_video", meeting.only_host_video)
+    only_host_chat        = body.get("only_host_chat", meeting.only_host_chat)
+    only_host_screenshare = body.get("only_host_screenshare", meeting.only_host_screenshare)
 
     meeting.title             = title
     meeting.is_all_day        = is_all_day
     meeting.repeat            = repeat
     meeting.require_admission = bool(require_admission)  # ← NEW
+    meeting.only_host_audio = bool(only_host_audio)
+    meeting.only_host_video = bool(only_host_video)
+    meeting.only_host_chat = bool(only_host_chat)
+    meeting.only_host_screenshare = bool(only_host_screenshare)
 
     if start_str:
         dt = parse_datetime(start_str)
@@ -964,7 +1223,8 @@ def edit_meeting(request, meeting_id):
 @require_POST
 def deactivate_meeting(request, room_name):
     meeting = Meeting.objects.filter(room_name=room_name, host=request.user).first()
-    if meeting and meeting.is_active:
+    if meeting and meeting.is_active and not meeting.activated_at:
+        # Only deactivate if host left before the meeting was ever started
         meeting.is_active = False
         meeting.save(update_fields=['is_active'])
     return JsonResponse({"status": "ok"})
@@ -1217,3 +1477,61 @@ def transcripts_hub(request):
         meeting__host=request.user
     ).select_related('meeting').order_by('-recorded_at')
     return render(request, 'meetings/transcripts_hub.html', {'transcripts': transcripts})
+
+
+
+
+
+######################################################
+# SUBSCRIPTION HELPERS
+######################################################
+
+def _get_or_create_subscription(user):
+    """
+    Returns the user's UserSubscription, creating a Free-plan one if absent.
+    Never raises — always returns something usable.
+    """
+    try:
+        sub = user.subscription
+        return sub
+    except UserSubscription.DoesNotExist:
+        pass
+
+    # Auto-provision a Free subscription
+    try:
+        free_plan = SubscriptionPlan.objects.get(name='free')
+    except SubscriptionPlan.DoesNotExist:
+        # Plans haven't been seeded yet — return synthetic defaults
+        return None
+
+    sub = UserSubscription.objects.create(user=user, plan=free_plan, is_active=True)
+    return sub
+
+
+def _get_plan_limits(user):
+    """
+    Returns (max_participants: int, max_duration_minutes: int) for the user.
+    Falls back to the tightest Free-plan defaults (100 / 40) if anything is wrong.
+    """
+    DEFAULT_PARTICIPANTS = 100
+    DEFAULT_DURATION     = 40
+
+    sub = _get_or_create_subscription(user)
+    if sub is None:
+        return DEFAULT_PARTICIPANTS, DEFAULT_DURATION
+
+    plan = sub.effective_plan
+    return plan.max_participants, plan.max_duration_minutes
+
+
+def _get_plan_features(user):
+    """Returns a dict of boolean feature flags for the user's active plan."""
+    sub = _get_or_create_subscription(user)
+    if sub is None:
+        return {"can_record": False, "can_use_waiting_room": False, "can_schedule": False}
+    plan = sub.effective_plan
+    return {
+        "can_record":           plan.can_record,
+        "can_use_waiting_room": plan.can_use_waiting_room,
+        "can_schedule":         plan.can_schedule,
+    }

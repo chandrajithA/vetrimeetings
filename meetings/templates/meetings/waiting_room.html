@@ -33,11 +33,12 @@
             overflow: hidden;
         }
 
+        /* ── Animated background ── */
         .bg-canvas {
             position: fixed; inset: 0; z-index: 0;
             background:
                 radial-gradient(ellipse 80% 60% at 50% -10%, rgba(79,142,247,0.12) 0%, transparent 70%),
-                radial-gradient(ellipse 50% 40% at 90% 80%, rgba(108,99,255,0.08) 0%, transparent 60%);
+                radial-gradient(ellipse 50% 40% at 90% 80%,  rgba(108,99,255,0.08) 0%, transparent 60%);
         }
         .bg-grid {
             position: fixed; inset: 0; z-index: 0;
@@ -48,38 +49,16 @@
             mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 100%);
         }
 
-        .wrapper {
-            position: relative; z-index: 1;
-            height: 100vh;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            padding: 24px;
-        }
-
-        /* ── Card (waiting room card, hidden until preview done) ── */
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 48px 52px;
-            max-width: 480px; width: 100%;
-            text-align: center;
-            box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
-            animation: cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
-        }
-        @keyframes cardIn {
-            from { opacity:0; transform:translateY(20px) scale(0.97); }
-            to   { opacity:1; transform:none; }
-        }
-
-        /* ── Preview overlay ── */
+        /* ══════════════════════════════════════
+           AV PREVIEW (Step 1)
+           ══════════════════════════════════════ */
         #previewOverlay {
             position: fixed; inset: 0; z-index: 100;
-            background: var(--bg);
             display: flex; align-items: center; justify-content: center;
             padding: 24px;
         }
         .preview-card {
+            position: relative; z-index: 1;
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 24px;
@@ -88,153 +67,149 @@
             box-shadow: 0 32px 80px rgba(0,0,0,0.5);
             animation: cardIn 0.4s cubic-bezier(0.16,1,0.3,1) both;
         }
-        .preview-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
-        .preview-subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; }
+        @keyframes cardIn {
+            from { opacity:0; transform:translateY(20px) scale(0.97); }
+            to   { opacity:1; transform:none; }
+        }
+        .preview-card h2     { font-size:18px; font-weight:600; margin-bottom:4px; }
+        .preview-subtitle    { font-size:13px; color:var(--text-dim); margin-bottom:16px; }
 
         .pv-video-wrap {
-            width: 100%; aspect-ratio: 16/9;
-            background: #0b0d11; border-radius: 12px;
-            overflow: hidden; position: relative; margin-bottom: 16px;
+            width:100%; aspect-ratio:16/9;
+            background:#0b0d11; border-radius:12px;
+            overflow:hidden; position:relative; margin-bottom:16px;
         }
-        #pvVideo {
-            width: 100%; height: 100%; object-fit: cover;
-            display: block; transform: scaleX(-1);
-        }
+        #pvVideo { width:100%; height:100%; object-fit:cover; display:block; transform:scaleX(-1); }
         #pvCamOff {
-            position: absolute; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            gap: 10px; background: #0b0d11;
-            color: var(--text-dim); font-size: 13px;
+            position:absolute; inset:0;
+            display:flex; flex-direction:column;
+            align-items:center; justify-content:center;
+            gap:10px; background:#0b0d11;
+            color:var(--text-dim); font-size:13px;
         }
         #pvAvatar {
-            width: 56px; height: 56px; border-radius: 50%;
-            background: var(--accent);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 20px; font-weight: 700; color: #fff;
+            width:56px; height:56px; border-radius:50%;
+            background:var(--accent);
+            display:flex; align-items:center; justify-content:center;
+            font-size:20px; font-weight:700; color:#fff;
         }
         #pvPermDenied {
-            display: none; position: absolute;
-            bottom: 0; left: 0; right: 0;
-            background: rgba(224,85,85,0.9); color: #fff;
-            font-size: 12px; padding: 10px 14px; text-align: center;
+            display:none; position:absolute; bottom:0; left:0; right:0;
+            background:rgba(224,85,85,0.9); color:#fff;
+            font-size:12px; padding:10px 14px; text-align:center;
         }
-
-        .pv-av-row { display: flex; gap: 10px;  }
+        .pv-av-row { display:flex; gap:10px; margin-bottom:16px; }
         .pv-av-btn {
-            flex: 1; padding: 10px 12px; border-radius: 10px;
-            border: 1px solid var(--border); background: var(--surface2);
-            color: var(--text); font-size: 13px; font-weight: 500;
-            cursor: pointer; font-family: inherit; transition: all 0.15s;
-            display: flex; 
-            gap: 8px;
-            align-items: center;
-            justify-content: center;
+            flex:1; padding:10px 12px; border-radius:10px;
+            border:1px solid var(--border); background:var(--surface2);
+            color:var(--text); font-size:13px; font-weight:500;
+            cursor:pointer; font-family:inherit; transition:all 0.15s;
+            display:flex; gap:8px; align-items:center; justify-content:center;
         }
-
-        .pv-av-btn img {
-            width: 20px;
-            height: 20px;
-            object-fit: contain;
-            flex-shrink: 0;
-        }
-        .pv-av-btn.off {
-            background: rgba(224,85,85,0.15);
-            border-color: rgba(224,85,85,0.4);
-            color: #e88;
-        }
-
-        .pv-name-wrap { margin-bottom: 16px; }
-        .pv-name-wrap label {
-            font-size: 12px; color: var(--text-dim);
-            display: block; margin-bottom: 6px;
-        }
+        .pv-av-btn img { width:20px; height:20px; object-fit:contain; flex-shrink:0; }
+        .pv-av-btn.off { background:rgba(224,85,85,0.15); border-color:rgba(224,85,85,0.4); color:#e88; }
+        .pv-name-wrap { margin-bottom:16px; }
+        .pv-name-wrap label { font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px; }
         .pv-name-wrap input {
-            width: 100%; padding: 10px 12px;
-            border-radius: 8px; border: 1px solid var(--border);
-            background: var(--surface2); color: var(--text);
-            font-size: 14px; font-family: inherit; outline: none;
-            transition: border-color 0.15s;
+            width:100%; padding:10px 12px; border-radius:8px;
+            border:1px solid var(--border); background:var(--surface2);
+            color:var(--text); font-size:14px; font-family:inherit; outline:none;
+            transition:border-color 0.15s;
         }
-        .pv-name-wrap input:focus { border-color: var(--accent); }
+        .pv-name-wrap input:focus { border-color:var(--accent); }
 
-        .btn-primary {
-            width: 100%; padding: 13px; border-radius: 12px;
-            border: none;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            color: #fff; font-family: inherit; font-size: 14px;
-            font-weight: 600; cursor: pointer; margin-bottom: 10px;
-            transition: opacity 0.15s, transform 0.1s;
+        /* ══════════════════════════════════════
+           WAITING ROOM CARD (Step 2)
+           ══════════════════════════════════════ */
+        .wrapper {
+            position:relative; z-index:1;
+            height:100vh;
+            display:flex; flex-direction:column;
+            align-items:center; justify-content:center;
+            padding:24px;
         }
-        .btn-primary:hover { opacity: 0.9; }
-        .btn-primary:active { transform: scale(0.98); }
-
-        .btn-ghost {
-            width: 100%; padding: 13px; border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.15);
-            background: transparent; color: var(--text-dim);
-            font-family: inherit; font-size: 14px; cursor: pointer;
-            transition: background 0.15s;
+        .card {
+            background:var(--surface);
+            border:1px solid var(--border);
+            border-radius:24px;
+            padding:48px 52px;
+            max-width:480px; width:100%;
+            text-align:center;
+            box-shadow:0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
         }
-        .btn-ghost:hover { background: rgba(255,255,255,0.05); }
 
-        /* ── Waiting card internals ── */
+        /* ── Animated icon ring (host-wait / admission states) ── */
         .icon-ring {
-            position: relative; width: 72px; height: 72px;
-            margin: 0 auto 28px;
+            position:relative; width:72px; height:72px;
+            margin:0 auto 28px;
         }
         .icon-ring::before, .icon-ring::after {
-            content: ''; position: absolute; inset: 0;
-            border-radius: 50%; border: 1px solid var(--accent); opacity: 0;
+            content:''; position:absolute; inset:0;
+            border-radius:50%; border:1px solid var(--accent); opacity:0;
         }
-        .icon-ring::before { animation: pulse-ring 2.4s ease-out 0.2s infinite; }
-        .icon-ring::after  { animation: pulse-ring 2.4s ease-out 1.2s infinite; }
+        .icon-ring::before { animation:pulse-ring 2.4s ease-out 0.2s infinite; }
+        .icon-ring::after  { animation:pulse-ring 2.4s ease-out 1.2s infinite; }
         @keyframes pulse-ring {
             0%   { transform:scale(1);   opacity:0.6; }
             100% { transform:scale(2.2); opacity:0;   }
         }
-        .icon-inner {
-            position: absolute; inset: 0;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 0 32px rgba(79,142,247,0.35);
+        .icon-ring .icon-inner {
+            position:absolute; inset:0;
+            background:linear-gradient(135deg, var(--accent), var(--accent2));
+            border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            box-shadow:0 0 32px rgba(79,142,247,0.35);
+            font-size:30px;
         }
-        .icon-inner svg { width: 32px; height: 32px; }
 
+        /* ── Static emoji icon (full / ok / denied) ── */
+        .state-icon {
+            width:72px; height:72px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            font-size:32px; margin:0 auto 24px;
+        }
+        .state-icon.full   { background:rgba(224,85,85,0.12);  }
+        .state-icon.ok     { background:rgba(62,207,142,0.12); }
+        .state-icon.denied { background:rgba(224,85,85,0.12);  }
+
+        /* ── Meeting name ── */
         .meeting-name {
-            font-family: 'DM Serif Display', serif;
-            font-size: 22px; font-weight: 400;
-            color: var(--text); margin-bottom: 8px; line-height: 1.2;margin-top:40px;
+            font-family:'DM Serif Display',serif;
+            font-size:22px; font-weight:400;
+            color:var(--text); margin-bottom:8px; line-height:1.2; margin-top:8px;
         }
         .status-line {
-            font-size: 14px; color: var(--text-dim);
-            margin-bottom: 32px; line-height: 1.5;
+            font-size:14px; color:var(--text-dim);
+            margin-bottom:24px; line-height:1.5;
         }
 
+        /* ── State badge ── */
         .state-badge {
-            display: inline-flex; align-items: center; gap: 8px;
-            background: var(--surface2); border: 1px solid var(--border);
-            border-radius: 100px; padding: 8px 18px;
-            font-size: 13px; font-weight: 500; color: var(--text-dim);
-            margin-bottom: 32px; transition: all 0.4s ease;
+            display:inline-flex; align-items:center; gap:8px;
+            border-radius:100px; padding:8px 18px;
+            font-size:13px; font-weight:500; margin-bottom:28px;
+            border:1px solid var(--border);
+            background:var(--surface2); color:var(--text-dim);
+            transition:all 0.4s;
         }
-        .state-badge.admitted  { background:rgba(62,207,142,0.1);  border-color:rgba(62,207,142,0.3);  color:var(--success); }
-        .state-badge.denied    { background:rgba(224,85,85,0.1);   border-color:rgba(224,85,85,0.3);   color:var(--danger);  }
+        .state-badge.admitted { background:rgba(62,207,142,0.1);  border-color:rgba(62,207,142,0.3);  color:var(--success); }
+        .state-badge.denied   { background:rgba(224,85,85,0.1);   border-color:rgba(224,85,85,0.3);   color:var(--danger);  }
+        .state-badge.full     { background:rgba(224,85,85,0.1);   border-color:rgba(224,85,85,0.3);   color:var(--danger);  }
+        .state-badge.space    { background:rgba(62,207,142,0.1);  border-color:rgba(62,207,142,0.3);  color:var(--success); }
 
-        .dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
+        /* ── Dots ── */
+        .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--text-dim); }
         .dot.pulse { background:var(--accent); animation:dot-pulse 1.5s ease-in-out infinite; }
         .dot.green { background:var(--success); }
-        .dot.red   { background:var(--danger);  }
+        .dot.red   { background:var(--danger);  animation:dot-pulse 1.5s ease-in-out infinite; }
         @keyframes dot-pulse {
-            0%,100% { opacity:1; transform:scale(1);   }
+            0%,100% { opacity:1;   transform:scale(1);   }
             50%     { opacity:0.4; transform:scale(0.7); }
         }
 
-        .waiting-dots {
-            display:flex; align-items:center; justify-content:center;
-            gap:6px; margin-bottom:32px;
-        }
+        /* ── Bouncing loading dots ── */
+        .waiting-dots { display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:28px; }
         .waiting-dots span {
             width:6px; height:6px; border-radius:50%;
             background:var(--accent); opacity:0.2;
@@ -247,9 +222,10 @@
             40%         { opacity:1;   transform:scale(1.2); }
         }
 
+        /* ── Host info row ── */
         .host-row {
             display:flex; align-items:center; gap:10px;
-            justify-content:center; margin-bottom:32px;
+            justify-content:center; margin-bottom:28px;
             padding:12px 20px; background:var(--surface2);
             border-radius:12px; border:1px solid var(--border);
         }
@@ -263,29 +239,61 @@
         .host-label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em; }
         .host-name  { font-size:13px; font-weight:500; color:var(--text); }
 
+        /* ── Queue position box ── */
+        .queue-box {
+            background:rgba(224,85,85,0.06);
+            border:1px solid rgba(224,85,85,0.15);
+            border-radius:14px; padding:18px 20px;
+            margin-bottom:24px; text-align:left;
+        }
+        .queue-box .qb-label { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); margin-bottom:6px; }
+        .queue-box .qb-value { font-size:28px; font-weight:800; color:var(--danger); }
+        .queue-box .qb-sub   { font-size:12px; color:var(--text-dim); margin-top:4px; }
+
+        /* ── Buttons ── */
+        .btn-primary {
+            width:100%; padding:13px; border-radius:12px; border:none;
+            background:linear-gradient(135deg,var(--accent),var(--accent2));
+            color:#fff; font-family:inherit; font-size:14px; font-weight:600;
+            cursor:pointer; margin-bottom:10px;
+            transition:opacity 0.15s, transform 0.1s;
+            box-shadow:0 4px 16px rgba(79,142,247,0.3);
+            display:flex; align-items:center; justify-content:center; gap:8px;
+            text-decoration:none;
+        }
+        .btn-primary:hover    { opacity:0.9; transform:translateY(-1px); }
+        .btn-primary:active   { transform:scale(0.98); }
+        .btn-primary:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+
+        .btn-ghost {
+            width:100%; padding:13px; border-radius:12px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:transparent; color:var(--text-dim);
+            font-family:inherit; font-size:14px; cursor:pointer;
+            transition:all 0.15s; display:block; text-align:center;
+            text-decoration:none;
+        }
+        .btn-ghost:hover { background:rgba(255,255,255,0.05); color:var(--text); border-color:rgba(255,255,255,0.25); }
+
         .btn-cancel {
             width:100%; padding:13px; border-radius:12px;
             border:1px solid rgba(224,85,85,0.3);
             background:rgba(224,85,85,0.08);
             color:#e88; font-family:'DM Sans',sans-serif;
-            font-size:14px; font-weight:500; cursor:pointer;
-            transition:all 0.2s;
+            font-size:14px; font-weight:500; cursor:pointer; transition:all 0.2s;
         }
         .btn-cancel:hover { background:rgba(224,85,85,0.15); border-color:rgba(224,85,85,0.5); color:var(--danger); }
 
-        .btn-join {
-            width:100%; padding:13px; border-radius:12px; border:none;
-            background:linear-gradient(135deg,var(--accent),var(--accent2));
-            color:#fff; font-family:'DM Sans',sans-serif;
-            font-size:14px; font-weight:600; cursor:pointer;
-            margin-bottom:12px; transition:all 0.2s;
-            box-shadow:0 4px 16px rgba(79,142,247,0.3);
-            display:none;
+        /* ── Spinner ── */
+        .spinner {
+            width:16px; height:16px; flex-shrink:0;
+            border:2px solid rgba(255,255,255,.25);
+            border-top-color:#fff; border-radius:50%;
+            animation:spin .65s linear infinite;
         }
-        .btn-join:hover { transform:translateY(-1px); box-shadow:0 6px 24px rgba(79,142,247,0.45); }
-        .btn-join.visible { display:block; animation:fadeUp 0.3s ease both; }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+        @keyframes spin { to { transform:rotate(360deg); } }
 
+        /* ── Toast ── */
         .toast {
             position:fixed; bottom:32px; left:50%;
             transform:translateX(-50%) translateY(80px);
@@ -293,13 +301,15 @@
             border-radius:12px; padding:12px 24px;
             font-size:13px; color:var(--text); z-index:9999;
             transition:transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.35s;
-            opacity:0; pointer-events:none;
+            opacity:0; pointer-events:none; white-space:nowrap;
         }
         .toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
 
+        .hidden { display:none !important; }
+
         @media (max-width:500px) {
             .card,.preview-card { padding:32px 24px; }
-            .meeting-name { font-size:18px;  }
+            .meeting-name { font-size:18px; }
         }
     </style>
 </head>
@@ -308,9 +318,9 @@
 <div class="bg-canvas"></div>
 <div class="bg-grid"></div>
 
-<!-- ══════════════════════════════════════
-     STEP 1 — AV Preview overlay
-     ══════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════
+     STEP 1 — AV Preview
+     ══════════════════════════════════════════════════════ -->
 <div id="previewOverlay">
     <div class="preview-card">
         <h2>Ready to join?</h2>
@@ -329,16 +339,16 @@
 
         <div class="pv-av-row">
             <button id="pvMicBtn" class="pv-av-btn" onclick="pvToggleMic()">
-                <img src="{% static 'meetings/images/audio-on.png' %}" id="lobbyMicIcon"
+                <img src="{% static 'meetings/images/audio-on.png' %}" id="pvMicIcon"
                      data-on="{% static 'meetings/images/audio-on.png' %}"
                      data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
-                <span id="lobbyMicLabel">Mic On</span>
+                <span id="pvMicLabel">Mic On</span>
             </button>
             <button id="pvCamBtn" class="pv-av-btn" onclick="pvToggleCam()">
-                <img src="{% static 'meetings/images/video-on.png' %}" id="lobbyCamIcon"
+                <img src="{% static 'meetings/images/video-on.png' %}" id="pvCamIcon"
                      data-on="{% static 'meetings/images/video-on.png' %}"
                      data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
-                <span id="lobbyCamLabel">Cam On</span>
+                <span id="pvCamLabel">Cam On</span>
             </button>
         </div>
 
@@ -349,163 +359,293 @@
                    placeholder="Enter your name" maxlength="60" autocomplete="off">
         </div>
 
-        <button class="btn-primary" onclick="pvProceed()">Join</button>
-        <button class="btn-ghost"   onclick="window.location.href='/'">Cancel</button>
+        <button class="btn-primary" onclick="pvProceed()">
+            <span id="pvJoinLabel">Continue</span>
+            <span id="pvJoinSpinner" class="spinner hidden"></span>
+        </button>
+        <button class="btn-ghost" onclick="window.location.href='/'" style="margin-top:0;">Cancel</button>
     </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     STEP 2 — Waiting room card (hidden until preview done)
-     ══════════════════════════════════════ -->
-<div class="wrapper" id="waitingWrapper" style="display:none;">
+<!-- ══════════════════════════════════════════════════════
+     STEP 2 — Waiting Room (5 inner states)
+     ══════════════════════════════════════════════════════ -->
+<div class="wrapper hidden" id="waitingWrapper">
     <div class="card">
 
-        <div class="icon-ring">
-            <div class="icon-inner">
-                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"
-                     stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
+        <!-- STATE: Meeting not started yet -->
+        <div id="stateNotStarted" class="hidden">
+            <div class="icon-ring"><div class="icon-inner">🎙️</div></div>
+            <div class="meeting-name">{{ meeting.title }}</div>
+            <div class="status-line">The host hasn't opened this meeting yet.<br>You'll be let in automatically when it starts.</div>
+            <div class="state-badge">
+                <span class="dot pulse"></span>
+                <span>Waiting for host…</span>
             </div>
+            <div class="waiting-dots"><span></span><span></span><span></span></div>
+            <button class="btn-cancel" onclick="cancelWait()">Leave Waiting Room</button>
         </div>
 
-        <div class="meeting-name">{{ meeting.title }}</div>
-        <div class="status-line" id="statusLine">Please wait while the host starts the meeting.</div>
-
-        <div class="state-badge" id="stateBadge">
-            <span class="dot pulse" id="stateDot"></span>
-            <span id="stateText">Waiting for host…</span>
+        <!-- STATE: Meeting full — queued -->
+        <div id="stateFull" class="hidden">
+            <div class="state-icon full">🚫</div>
+            <div class="meeting-name">{{ meeting.title }}</div>
+            <div class="status-line">This meeting is currently full. You've been<br>added to the waitlist — we'll notify you when a spot opens.</div>
+            <div class="state-badge full">
+                <span class="dot red"></span>
+                <span>Meeting is full — you're queued</span>
+            </div>
+            <div class="queue-box">
+                <div class="qb-label">Your queue position</div>
+                <div class="qb-value" id="queuePosition">—</div>
+                <div class="qb-sub"   id="queueSub">Checking…</div>
+            </div>
+            <button class="btn-cancel" onclick="cancelWait()">Leave Queue</button>
         </div>
 
-        <div class="waiting-dots" id="waitingDots">
-            <span></span><span></span><span></span>
+        <!-- STATE: Space opened — first in queue -->
+        <div id="stateSpaceOpen" class="hidden">
+            <div class="state-icon ok">🎉</div>
+            <div class="meeting-name">{{ meeting.title }}</div>
+            <div class="status-line">Someone left and a spot is now available.<br>Join before someone else takes it!</div>
+            <div class="state-badge space">
+                <span class="dot green"></span>
+                <span>A spot opened up!</span>
+            </div>
+            <div style="margin-bottom:20px;"></div>
+            <button class="btn-primary" id="joinNowBtn" onclick="joinNow()">
+                <span id="joinSpinner" class="spinner hidden"></span>
+                Join Meeting Now
+            </button>
+            <button class="btn-ghost" onclick="cancelWait()">Decline &amp; Leave</button>
         </div>
 
-        <button class="btn-join" id="joinBtn" onclick="proceedToRoom()">
-            Join Meeting Now
-        </button>
+        <!-- STATE: Waiting for admission -->
+        <div id="stateAdmission" class="hidden">
+            <div class="icon-ring"><div class="icon-inner">🔔</div></div>
+            <div class="meeting-name">{{ meeting.title }}</div>
+            <div class="status-line">The host has been notified.<br>Please wait while they admit you into the meeting.</div>
+            <div class="state-badge">
+                <span class="dot pulse"></span>
+                <span>Waiting to be admitted…</span>
+            </div>
+            {% if meeting.host %}
+            <div class="host-row">
+                <div class="host-avatar">{{ meeting.host.name|default:"H"|slice:":1"|upper }}</div>
+                <div class="host-info">
+                    <div class="host-label">Host</div>
+                    <div class="host-name">{{ meeting.host.name|default:"Host" }}</div>
+                </div>
+            </div>
+            {% else %}
+            <div class="waiting-dots"><span></span><span></span><span></span></div>
+            {% endif %}
+            <button class="btn-cancel" onclick="cancelWait()">Cancel</button>
+        </div>
 
-        <button class="btn-cancel" onclick="cancelWait()">Leave Waiting Room</button>
+        <!-- STATE: Denied -->
+        <div id="stateDenied" class="hidden">
+            <div class="state-icon denied">🚫</div>
+            <div class="meeting-name">{{ meeting.title }}</div>
+            <div class="status-line">The host declined your request to join this meeting.</div>
+            <div class="state-badge denied">
+                <span class="dot red"></span>
+                <span>Entry was declined</span>
+            </div>
+            <div style="margin-bottom:20px;"></div>
+            <a href="/" class="btn-primary">Return to Dashboard</a>
+        </div>
+
     </div>
 </div>
 
+<!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+     ══════════════════════════════════════════════════════ -->
 <script>
-/* ════════════════════════════════════════════════════════
-   CONSTANTS  (from Django context)
-   ════════════════════════════════════════════════════════ */
-const ROOM_NAME        = "{{ room_name }}";
-const REQUIRE_ADMISSION = {{ meeting.require_admission|yesno:"true,false" }};
+/* ── Django → JS ── */
+const ROOM_NAME            = "{{ room_name }}";
+const REQUIRE_ADMISSION    = {{ meeting.require_admission|yesno:"true,false" }};
+const IS_ACTIVE            = {{ meeting.is_active|yesno:"true,false" }};
+const START_IN_QUEUE       = {{ start_in_queue|default:False|yesno:"true,false" }};
 const DISPLAY_NAME_DEFAULT = "{{ display_name|escapejs }}";
+const ONLY_HOST_AUDIO      = {{ only_host_audio|default:False|yesno:"true,false" }};
+const ONLY_HOST_VIDEO      = {{ only_host_video|default:False|yesno:"true,false" }};
 
-/* ════════════════════════════════════════════════════════
-   STEP 1 — PREVIEW OVERLAY
-   ════════════════════════════════════════════════════════ */
-let pvMicOn      = true;
-let pvCamOn      = true;
-let pvStream     = null;
-let pvPermDenied = false;
+/* ════════════════════════════════════════════
+   STEP 1 — AV PREVIEW
+   ════════════════════════════════════════════ */
+let pvMicOn = false, pvCamOn = false, pvStream = null, pvPermDenied = false;
 
-/* Set avatar initials from default name */
-(function () {
+// Avatar initials
+(function(){
     const n = DISPLAY_NAME_DEFAULT;
-    if (n) {
-        document.getElementById("pvAvatar").textContent =
-            n.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
-    }
+    if (n) document.getElementById("pvAvatar").textContent =
+        n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2) || "?";
 })();
 
-async function pvStartPreview() {
-    const videoEl = document.getElementById("pvVideo");
-    const camOff  = document.getElementById("pvCamOff");
-    const permEl  = document.getElementById("pvPermDenied");
+// Show off-state immediately — no getUserMedia on page load
+document.getElementById("pvCamOff").style.display = "flex";
 
-    try {
-        pvStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        pvStream.getVideoTracks().forEach(t => t.enabled = pvCamOn);
-        pvStream.getAudioTracks().forEach(t => t.enabled = pvMicOn);
-
-        if (pvCamOn && pvStream.getVideoTracks().length) {
-            videoEl.srcObject = pvStream;
-            camOff.style.display = "none";
-        } else {
-            camOff.style.display = "flex";
-        }
-    } catch (e) {
-        if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
-            pvPermDenied = true;
-            pvMicOn = false; pvCamOn = false;
-            permEl.style.display = "block";
-            document.getElementById("pvMicBtn").disabled = true;
-            document.getElementById("pvMicBtn").style.opacity = "0.4";
-            document.getElementById("pvCamBtn").disabled = true;
-            document.getElementById("pvCamBtn").style.opacity = "0.4";
-        }
-        camOff.style.display = "flex";
-    }
-    syncPvBtns();
+/* ── Lock a preview button when host has disabled that track ── */
+function lockPvBtn(btnId, iconId, labelId, labelText) {
+    const btn  = document.getElementById(btnId);
+    const icon = document.getElementById(iconId);
+    const lbl  = document.getElementById(labelId);
+    if (!btn) return;
+    // Show off icon
+    if (icon) icon.src = icon.dataset.off;
+    if (lbl)  lbl.textContent = labelText;
+    btn.classList.remove("off");
+    btn.classList.add("off");
+    btn.disabled = true;
+    btn.style.opacity  = "0.38";
+    btn.style.cursor   = "not-allowed";
+    btn.title = "Disabled by host";
+    // Block all clicks in capture phase so the onclick never fires
+    btn.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        showPvRestrictionToast("The host has disabled this for participants.");
+    }, true);
 }
+
+function showPvRestrictionToast(msg) {
+    let t = document.getElementById("pvRestrictToast");
+    if (!t) {
+        t = document.createElement("div");
+        t.id = "pvRestrictToast";
+        t.style.cssText = [
+            "position:fixed;bottom:20px;left:50%;transform:translateX(-50%)",
+            "background:rgba(14,17,26,0.95);color:#e8eaf0",
+            "padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500",
+            "z-index:9999;pointer-events:none;border:1px solid rgba(255,255,255,0.1)",
+            "transition:opacity .3s",
+        ].join(";");
+        document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = "1";
+    clearTimeout(t._t);
+    t._t = setTimeout(() => { t.style.opacity = "0"; }, 2500);
+}
+
+// Apply restrictions immediately on load
+if (ONLY_HOST_AUDIO) lockPvBtn("pvMicBtn", "pvMicIcon", "pvMicLabel", "Mic Off");
+if (ONLY_HOST_VIDEO) lockPvBtn("pvCamBtn", "pvCamIcon", "pvCamLabel", "Cam Off");
+
+// Show a note in the preview card if any restriction applies
+(function() {
+    if (!ONLY_HOST_AUDIO && !ONLY_HOST_VIDEO) return;
+    const parts = [];
+    if (ONLY_HOST_AUDIO) parts.push("microphone");
+    if (ONLY_HOST_VIDEO) parts.push("camera");
+    let note = document.getElementById("pvRestrictionNote");
+    if (!note) {
+        note = document.createElement("div");
+        note.id = "pvRestrictionNote";
+        note.style.cssText = [
+            "margin-top:10px;padding:8px 14px;border-radius:8px",
+            "background:rgba(255,160,0,0.10);border:1px solid rgba(255,160,0,0.25)",
+            "font-size:12px;color:#f0c060;line-height:1.5;text-align:center",
+        ].join(";");
+        // Insert after the av-row
+        const avRow = document.querySelector(".pv-av-row");
+        if (avRow) avRow.after(note);
+    }
+    note.textContent = `The host has disabled participant ${parts.join(" and ")} for this meeting.`;
+})();
+
+syncPvBtns();
 
 function syncPvBtns() {
-    const micBtn   = document.getElementById("pvMicBtn");
-    const camBtn   = document.getElementById("pvCamBtn");
-    const micIcon  = document.getElementById("lobbyMicIcon");
-    const camIcon  = document.getElementById("lobbyCamIcon");
-    const micLabel = document.getElementById("lobbyMicLabel");
-    const camLabel = document.getElementById("lobbyCamLabel");
-
-    micIcon.src = pvMicOn ? micIcon.dataset.on : micIcon.dataset.off;
-    micLabel.textContent = pvMicOn ? "Mic On" : "Mic Off";
-    micBtn.classList.toggle("off", !pvMicOn);  // red bg when off
-
-    camIcon.src = pvCamOn ? camIcon.dataset.on : camIcon.dataset.off;
-    camLabel.textContent = pvCamOn ? "Cam On" : "Cam Off";
-    camBtn.classList.toggle("off", !pvCamOn);  // red bg when off
+    const mi = document.getElementById("pvMicIcon");
+    const ci = document.getElementById("pvCamIcon");
+    // Don't sync locked (restricted) buttons
+    const micBtn = document.getElementById("pvMicBtn");
+    const camBtn = document.getElementById("pvCamBtn");
+    if (mi && !micBtn?.disabled) {
+        mi.src = pvMicOn ? mi.dataset.on : mi.dataset.off;
+        document.getElementById("pvMicLabel").textContent = pvMicOn ? "Mic On"  : "Mic Off";
+        micBtn?.classList.toggle("off", !pvMicOn);
+    }
+    if (ci && !camBtn?.disabled) {
+        ci.src = pvCamOn ? ci.dataset.on : ci.dataset.off;
+        document.getElementById("pvCamLabel").textContent = pvCamOn ? "Cam On"  : "Cam Off";
+        camBtn?.classList.toggle("off", !pvCamOn);
+    }
 }
 
-function pvToggleMic() {
-    if (pvPermDenied) return;
+async function pvToggleMic() {
+    if (pvPermDenied || ONLY_HOST_AUDIO) return;
     pvMicOn = !pvMicOn;
-    if (pvStream) pvStream.getAudioTracks().forEach(t => t.enabled = pvMicOn);
+
+    if (pvMicOn) {
+        const hasAudio = pvStream && pvStream.getAudioTracks().length > 0;
+        if (!hasAudio) {
+            try {
+                const ms = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                if (!pvStream) pvStream = ms;
+                else ms.getAudioTracks().forEach(t => pvStream.addTrack(t));
+            } catch(e) {
+                pvMicOn = false;
+                if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
+                    pvPermDenied = true;
+                    document.getElementById("pvPermDenied").style.display = "block";
+                    document.getElementById("pvMicBtn").disabled = true;
+                    document.getElementById("pvMicBtn").style.opacity = "0.4";
+                }
+                syncPvBtns();
+                return;
+            }
+        }
+        if (pvStream) pvStream.getAudioTracks().forEach(t => t.enabled = true);
+    } else {
+        if (pvStream) pvStream.getAudioTracks().forEach(t => t.enabled = false);
+    }
     syncPvBtns();
 }
 
 async function pvToggleCam() {
-    if (pvPermDenied) return;
+    if (pvPermDenied || ONLY_HOST_VIDEO) return;
     pvCamOn = !pvCamOn;
-
-    const videoEl = document.getElementById("pvVideo");
-    const camOff  = document.getElementById("pvCamOff");
+    const vid = document.getElementById("pvVideo");
+    const off = document.getElementById("pvCamOff");
 
     if (!pvCamOn) {
         if (pvStream) pvStream.getVideoTracks().forEach(t => t.enabled = false);
-        videoEl.srcObject = null;
-        camOff.style.display = "flex";
+        vid.srcObject = null;
+        off.style.display = "flex";
     } else {
-        camOff.style.display = "none";
-        if (pvStream && pvStream.getVideoTracks().length) {
-            pvStream.getVideoTracks().forEach(t => t.enabled = true);
-            videoEl.srcObject = pvStream;
-        } else {
+        const hasVideo = pvStream && pvStream.getVideoTracks().length > 0;
+        if (!hasVideo) {
             try {
                 const vs = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user" }, audio: false
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false,
                 });
-                if (pvStream) {
-                    pvStream.addTrack(vs.getVideoTracks()[0]);
-                } else {
-                    pvStream = vs;
-                }
-                videoEl.srcObject = pvStream;
-            } catch (e) {
+                if (!pvStream) pvStream = vs;
+                else vs.getVideoTracks().forEach(t => pvStream.addTrack(t));
+            } catch(e) {
                 pvCamOn = false;
-                camOff.style.display = "flex";
+                if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
+                    pvPermDenied = true;
+                    document.getElementById("pvPermDenied").style.display = "block";
+                    document.getElementById("pvCamBtn").disabled = true;
+                    document.getElementById("pvCamBtn").style.opacity = "0.4";
+                }
+                off.style.display = "flex";
+                syncPvBtns();
+                return;
             }
         }
+        pvStream.getVideoTracks().forEach(t => t.enabled = true);
+        vid.srcObject = pvStream;
+        vid.style.transform = "scaleX(-1)";
+        off.style.display = "none";
     }
     syncPvBtns();
 }
@@ -520,216 +660,160 @@ function pvProceed() {
         return;
     }
 
-    /* Save AV choices for when the user eventually enters the room */
-    sessionStorage.setItem("pv_mic", pvMicOn ? "1" : "0");
-    sessionStorage.setItem("pv_cam", pvCamOn ? "1" : "0");
-    sessionStorage.setItem("join_display_name", name);
-
-    /* Stop preview — we do NOT need camera/mic on the waiting page */
+    // Stop any acquired preview tracks (camera LED off)
     if (pvStream) {
-        pvStream.getTracks().forEach(t => t.stop());
+        pvStream.getTracks().forEach(t => { try { t.stop(); } catch(_) {} });
         pvStream = null;
     }
     document.getElementById("pvVideo").srcObject = null;
 
-    /* Hide preview, show waiting card */
-    document.getElementById("previewOverlay").style.display = "none";
-    document.getElementById("waitingWrapper").style.display  = "flex";
+    // Enforce restrictions — regardless of what the user toggled
+    const effectiveMic = ONLY_HOST_AUDIO ? false : pvMicOn;
+    const effectiveCam = ONLY_HOST_VIDEO ? false : pvCamOn;
 
-    /* Kick off the waiting-room logic with the confirmed name */
+    sessionStorage.setItem("pv_mic", effectiveMic ? "1" : "0");
+    sessionStorage.setItem("pv_cam", effectiveCam ? "1" : "0");
+    sessionStorage.setItem("prejoin_mic", effectiveMic ? "1" : "0");
++   sessionStorage.setItem("prejoin_cam", effectiveCam ? "1" : "0");
+    sessionStorage.setItem("join_display_name", name);
+
+    // Swap views
+    document.getElementById("previewOverlay").classList.add("hidden");
+    document.getElementById("waitingWrapper").classList.remove("hidden");
+
     startWaiting(name);
 }
 
-/* Start preview as soon as the page loads */
-pvStartPreview();
 
-
-/* ════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════
    STEP 2 — WAITING ROOM POLLING
-   ════════════════════════════════════════════════════════ */
-const POLL_INTERVAL = 15000;   /* 15 s — enough for most cases */
-
+   ════════════════════════════════════════════ */
+const POLL_MS     = 3000;
 let _pollTimer    = null;
-let _state        = "waiting"; /* waiting | pending_admission | admitted | denied | started_no_admission */
+let _state        = null;
+let _knockSent    = false;
 let _autoJoinDone = false;
-let _pollName     = DISPLAY_NAME_DEFAULT; /* updated when user confirms name */
-let _knockSent    = false;               /* prevent duplicate knock POSTs */
+let _pollName     = DISPLAY_NAME_DEFAULT;
 
-const stateBadge  = document.getElementById("stateBadge");
-const stateDot    = document.getElementById("stateDot");
-const stateText   = document.getElementById("stateText");
-const statusLine  = document.getElementById("statusLine");
-const waitingDots = document.getElementById("waitingDots");
-const joinBtn     = document.getElementById("joinBtn");
-const toast       = document.getElementById("toast");
+const toastEl = document.getElementById("toast");
 
-function showToast(msg, duration = 3500) {
-    toast.textContent = msg;
-    toast.classList.add("show");
-    setTimeout(() => toast.classList.remove("show"), duration);
+function showToast(msg, ms = 4000) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), ms);
 }
 
-function setState(newState) {
+function showState(newState) {
     if (_state === newState) return;
     _state = newState;
-
-    stateBadge.className = "state-badge";
-    stateDot.className   = "dot";
-
-    switch (newState) {
-        case "waiting":
-            stateDot.classList.add("pulse");
-            stateText.textContent  = "Waiting for host…";
-            statusLine.textContent = "Please wait while the host starts the meeting.";
-            waitingDots.style.display = "flex";
-            joinBtn.classList.remove("visible");
-            break;
-
-        case "pending_admission":
-            stateDot.classList.add("pulse");
-            stateText.textContent  = "Waiting for host to admit you…";
-            statusLine.textContent = "The host has been notified. Please wait to be admitted.";
-            waitingDots.style.display = "flex";
-            joinBtn.classList.remove("visible");
-            break;
-
-        case "admitted":
-            stateBadge.classList.add("admitted");
-            stateDot.classList.add("green");
-            stateText.textContent  = "You've been admitted!";
-            statusLine.textContent = "The host has admitted you. Joining the meeting…";
-            waitingDots.style.display = "none";
-            joinBtn.classList.add("visible");
-            showToast("✅ You've been admitted! Joining now…");
-            setTimeout(proceedToRoom, 1500);
-            break;
-
-        case "denied":
-            stateBadge.classList.add("denied");
-            stateDot.classList.add("red");
-            stateText.textContent  = "Entry was denied";
-            statusLine.textContent = "The host declined your request to join.";
-            waitingDots.style.display = "none";
-            joinBtn.classList.remove("visible");
-            if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-            showToast("❌ The host declined your request.", 5000);
-            break;
-
-        case "started_no_admission":
-            stateDot.classList.add("green");
-            stateText.textContent  = "Meeting has started!";
-            statusLine.textContent = "The meeting is ready. Joining now…";
-            waitingDots.style.display = "none";
-            joinBtn.classList.add("visible");
-            showToast("✅ Meeting started! Joining…");
-            setTimeout(proceedToRoom, 1000);
-            break;
-    }
+    ["stateNotStarted","stateFull","stateSpaceOpen","stateAdmission","stateDenied"]
+        .forEach(id => document.getElementById(id).classList.add("hidden"));
+    const map = {
+        not_started: "stateNotStarted",
+        full:        "stateFull",
+        space_open:  "stateSpaceOpen",
+        admission:   "stateAdmission",
+        denied:      "stateDenied",
+    };
+    if (map[newState]) document.getElementById(map[newState]).classList.remove("hidden");
 }
 
-async function sendKnock(name) {
+function updateQueueDisplay(pos) {
+    document.getElementById("queuePosition").textContent = pos ? "#" + pos : "—";
+    document.getElementById("queueSub").textContent = !pos ? "Checking…"
+        : pos === 1 ? "You are next in line!"
+        : `${pos - 1} person${pos - 1 > 1 ? "s" : ""} ahead of you`;
+}
+
+async function sendKnock() {
     if (_knockSent) return;
     _knockSent = true;
     try {
         await fetch(`/meeting/knock/${ROOM_NAME}/`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": getCookie("csrftoken"),
-            },
-            body: JSON.stringify({ display_name: name }),
+            headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+            body: JSON.stringify({ display_name: _pollName }),
         });
-    } catch (e) {
-        /* If knock fails, allow retry on next poll cycle */
-        _knockSent = false;
-        console.warn("Knock failed:", e);
-    }
+    } catch(e) { _knockSent = false; }
 }
 
 async function poll() {
     try {
-        /* ── 1. Is the meeting live? ── */
-        const res  = await fetch(
-            `/meeting/waiting-status/${ROOM_NAME}/?name=${encodeURIComponent(_pollName)}`
-        );
-        if (!res.ok) return;
-        const data = await res.json();
+        const sData = await fetch(`/meeting/waiting-status/${ROOM_NAME}/`).then(r => r.json());
+        if (!sData.meeting_active) { showState("not_started"); return; }
 
-        if (!data.meeting_active) {
-            /* Meeting not started yet — stay in "waiting" */
-            setState("waiting");
+        const cData = await fetch(`/meeting/capacity-status/${ROOM_NAME}/`).then(r => r.json());
+
+        if (cData.space_available) {
+            if (_state !== "space_open") {
+                showToast("🎉 A spot opened up — you can join now!", 6000);
+                if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
+            }
+            showState("space_open");
+            return;
+        }
+        if (cData.full) {
+            updateQueueDisplay(cData.queue_position || null);
+            showState("full");
             return;
         }
 
-        /* ── 2. Meeting is active ── */
-        if (!REQUIRE_ADMISSION) {
-            /* No admission needed — just join */
-            setState("started_no_admission");
-            return;
+        if (REQUIRE_ADMISSION) {
+            await sendKnock();
+            const aData = await fetch(`/meeting/admission-status/${ROOM_NAME}/`).then(r => r.json());
+            if (aData.status === "admitted") { clearInterval(_pollTimer); proceedToRoom(); return; }
+            if (aData.status === "denied")   { clearInterval(_pollTimer); showState("denied"); return; }
+            showState("admission");
+        } else {
+            clearInterval(_pollTimer);
+            proceedToRoom();
         }
+    } catch(e) { console.warn("Poll error:", e); }
+}
 
-        /* ── 3. Admission required: knock first ── */
-        if (_state === "waiting") {
-            setState("pending_admission");
-            await sendKnock(_pollName);
-        }
+function proceedToRoom() {
+    if (_autoJoinDone) return;
+    _autoJoinDone = true;
+    sessionStorage.setItem("join_display_name", _pollName);
+    // Carry the effective (possibly restricted) pv_ values into the room prejoin keys
+    sessionStorage.setItem("prejoin_mic", sessionStorage.getItem("pv_mic") || "0");
+    sessionStorage.setItem("prejoin_cam", sessionStorage.getItem("pv_cam") || "0");
+    window.location.href = `/room/${ROOM_NAME}/`;
+}
 
-        /* ── 4. Check if host has admitted / denied us ── */
-        const aRes  = await fetch(`/meeting/admission-status/${ROOM_NAME}/`);
-        if (!aRes.ok) return;
-        const aData = await aRes.json();
+function joinNow() {
+    document.getElementById("joinNowBtn").disabled = true;
+    document.getElementById("joinSpinner").classList.remove("hidden");
+    proceedToRoom();
+}
 
-        if (aData.status === "admitted") {
-            setState("admitted");
-        } else if (aData.status === "denied") {
-            setState("denied");
-        }
-        /* else still "pending" — wait for next poll */
-
-    } catch (e) {
-        console.warn("Poll error:", e);
-    }
+function cancelWait() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    const fd = new FormData();
+    fd.append("csrfmiddlewaretoken", getCookie("csrftoken"));
+    navigator.sendBeacon(`/meeting/knock-cancel/${ROOM_NAME}/`, fd);
+    window.location.href = "/";
 }
 
 function startWaiting(name) {
     _pollName  = name || DISPLAY_NAME_DEFAULT;
     _knockSent = false;
 
-    /* Poll immediately so user sees a fast first response,
-       then every POLL_INTERVAL ms */
+    if (START_IN_QUEUE)         showState("full");
+    else if (!IS_ACTIVE)        showState("not_started");
+    else if (REQUIRE_ADMISSION) showState("admission");
+    else                        showState("admission");
+
     poll();
-    if (_pollTimer) clearInterval(_pollTimer);
-    _pollTimer = setInterval(poll, POLL_INTERVAL);
-}
-
-function proceedToRoom() {
-    if (_autoJoinDone) return;
-    _autoJoinDone = true;
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-
-    /* Pass the confirmed name + AV choices to the room page */
-    sessionStorage.setItem("join_display_name", _pollName);
-    sessionStorage.setItem("prejoin_mic", sessionStorage.getItem("pv_mic") || "1");
-    sessionStorage.setItem("prejoin_cam", sessionStorage.getItem("pv_cam") || "1");
-
-    window.location.href = `/room/${ROOM_NAME}/`;
-}
-
-function cancelWait() {
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-
-    /* Tell server we're leaving the queue */
-    const fd = new FormData();
-    fd.append("csrfmiddlewaretoken", getCookie("csrftoken"));
-    navigator.sendBeacon(`/meeting/knock-cancel/${ROOM_NAME}/`, fd);
-
-    window.location.href = "/";
+    _pollTimer = setInterval(poll, POLL_MS);
 }
 
 function getCookie(name) {
     const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
     return v ? v.pop() : "";
 }
+
+window.addEventListener("pagehide", () => { if (_pollTimer) clearInterval(_pollTimer); });
 </script>
 
 </body>

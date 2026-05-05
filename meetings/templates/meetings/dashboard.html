@@ -348,6 +348,56 @@
             </label>
         </div>
 
+        <div class="join-field" style="margin-top:8px;">
+            <label style="font-size:13px;font-weight:600;color:var(--color-text,#e8eaf0);margin-bottom:10px;display:block;letter-spacing:.02em;">
+                Meeting Restrictions
+            </label>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can speak</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' microphones are disabled</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="schOnlyHostAudio">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot turn on video</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' cameras are disabled</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="schOnlyHostVideo">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can chat</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants can read but not send messages</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="schOnlyHostChat">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot share screen</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Only the host can share their screen</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="schOnlyHostScreenshare">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+        </div>
+
         <div class="join-field">
             <label>Add Invitees</label>
             <div class="invitee-input-row">
@@ -430,16 +480,6 @@
             <input type="text" id="editRepeatEnd" placeholder="Select date (optional)" readonly>
         </div>
 
-        <div class="join-field">
-            <label>Invitees</label>
-            <div class="invitee-input-row">
-                <input type="email" id="editInviteeInput" placeholder="name@example.com"
-                       onkeydown="if(event.key==='Enter'){addEditInvitee();event.preventDefault();}">
-                <button type="button" class="invitee-add-btn" onclick="addEditInvitee()">Add</button>
-            </div>
-            <div id="editInviteeList" class="invitee-list"></div>
-        </div>
-
         <div class="join-field toggle-row" style="margin-top:4px;">
             <div style="display:flex;flex-direction:column;gap:2px;">
                 <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
@@ -453,6 +493,67 @@
                 <input type="checkbox" id="editRequireAdmission">
                 <span class="sch-slider"></span>
             </label>
+        </div>
+
+        <!-- Meeting Restrictions -->
+        <div class="join-field" style="margin-top:8px;">
+            <label style="font-size:13px;font-weight:600;color:var(--color-text,#e8eaf0);margin-bottom:10px;display:block;letter-spacing:.02em;">
+                Meeting Restrictions
+            </label>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can speak</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' microphones are disabled</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="editOnlyHostAudio">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot turn on video</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' cameras are disabled</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="editOnlyHostVideo">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can chat</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants can read but not send messages</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="editOnlyHostChat">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot share screen</span>
+                    <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Only the host can share their screen</span>
+                </div>
+                <label class="sch-toggle" style="flex-shrink:0;margin-left:auto;">
+                    <input type="checkbox" id="editOnlyHostScreenshare">
+                    <span class="sch-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="join-field">
+            <label>Invitees</label>
+            <div class="invitee-input-row">
+                <input type="email" id="editInviteeInput" placeholder="name@example.com"
+                       onkeydown="if(event.key==='Enter'){addEditInvitee();event.preventDefault();}">
+                <button type="button" class="invitee-add-btn" onclick="addEditInvitee()">Add</button>
+            </div>
+            <div id="editInviteeList" class="invitee-list"></div>
         </div>
 
         <button type="button" class="join-btn" id="editSubmitBtn" onclick="submitEdit()">
@@ -506,7 +607,7 @@ function localIso(dateStr, timeStr) {
    SHARED PREVIEW STATE
    ─────────────────────────────────────────────────────────────── */
 let joinMicOn = true, joinCamOn = true, joinStream = null, joinPermDenied = false, joinRoomName = null;
-let newMicOn = true, newCamOn = true, newStream = null, newPermDenied = false;
+let newMicOn = false, newCamOn = false, newStream = null, newPermDenied = false;
 let savedUsername = "";
 let schInvitees = [];
 
@@ -1019,6 +1120,10 @@ function openEditModal(m) {
     document.getElementById('editRepeat').value    = m.repeat || 'none';
     document.getElementById('editAllDay').checked  = m.is_all_day;
     document.getElementById('editRequireAdmission').checked = m.require_admission || false;
+    document.getElementById('editOnlyHostAudio').checked       = m.only_host_audio       || false;
+    document.getElementById('editOnlyHostVideo').checked       = m.only_host_video       || false;
+    document.getElementById('editOnlyHostChat').checked        = m.only_host_chat        || false;
+    document.getElementById('editOnlyHostScreenshare').checked = m.only_host_screenshare || false;
 
     const modal = document.getElementById('editMeetingModal');
     modal.style.display = 'flex'; modal.style.visibility = 'visible'; modal.style.opacity = '1';
@@ -1171,7 +1276,20 @@ async function submitEdit() {
         const res = await fetch(`/meeting/edit/${id}/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({ title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd, invitees: editInvitees, require_admission: document.getElementById('editRequireAdmission')?.checked || false }),
+            body: JSON.stringify({ 
+                title, 
+                start, 
+                end, 
+                all_day: allDay, 
+                repeat, 
+                repeat_end: repeatEnd, 
+                invitees: editInvitees, 
+                require_admission: document.getElementById('editRequireAdmission')?.checked || false, 
+                only_host_audio:       document.getElementById('editOnlyHostAudio')?.checked       || false,
+                only_host_video:       document.getElementById('editOnlyHostVideo')?.checked       || false,
+                only_host_chat:        document.getElementById('editOnlyHostChat')?.checked        || false,
+                only_host_screenshare: document.getElementById('editOnlyHostScreenshare')?.checked || false, 
+            }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to update');
@@ -1423,9 +1541,9 @@ function closeNewMeetingDialog() {
     document.getElementById("newPreviewVideo").srcObject = null;
     document.getElementById("newStep1").classList.remove("hidden");
     document.getElementById("newStep2").classList.add("hidden");
-    newPermDenied = false; newMicOn = true; newCamOn = true;
-    _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", true, "Mic On","Mic Off");
-    _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", true, "Cam On","Cam Off");
+    newPermDenied = false; newMicOn = false; newCamOn = false;
+    _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", false, "Mic On","Mic Off");
+    _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", false, "Cam On","Cam Off");
     // ✅ Reset name to DB value on close
     const nameInput = document.getElementById("newHostName");
     if (nameInput) nameInput.value = nameInput.defaultValue;
@@ -1435,6 +1553,7 @@ function closeNewMeetingDialog() {
 
 async function newGoToPreview() {
     // ✅ Read name from step 1 before switching steps
+    newMicOn = false; newCamOn = false;
     const nameInput = document.getElementById("newHostName");
     const hostName  = nameInput ? nameInput.value.trim() : "";
 
@@ -1456,9 +1575,12 @@ async function newGoToPreview() {
 
 function newBackToDetails() {
     _stopStream(newStream); newStream = null;
+    newMicOn = false; newCamOn = false; newPermDenied = false;
     document.getElementById("newPreviewVideo").srcObject = null;
     document.getElementById("newStep2").classList.add("hidden");
     document.getElementById("newStep1").classList.remove("hidden");
+    _syncAvBtn("newMicBtn","newMicIcon","newMicLabel", false, "Mic On","Mic Off");
+    _syncAvBtn("newCamBtn","newCamIcon","newCamLabel", false, "Cam On","Cam Off");
 }
 
 function toggleNewMic() {
@@ -1704,6 +1826,7 @@ function closeScheduleModal() {
     if (_fpSchRepeatEnd) _fpSchRepeatEnd.clear();
     const admissionCheck = document.getElementById("schRequireAdmission");
     if (admissionCheck) admissionCheck.checked = false;
+    ['schOnlyHostAudio','schOnlyHostVideo','schOnlyHostChat','schOnlyHostScreenshare'].forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
 }
 
 function toggleAllDay() {
@@ -1776,6 +1899,10 @@ async function submitSchedule() {
                 repeat_end: repeatEnd,
                 invitees: schInvitees,
                 require_admission: document.getElementById('schRequireAdmission')?.checked || false,
+                only_host_audio:       document.getElementById('schOnlyHostAudio')?.checked       || false,
+                only_host_video:       document.getElementById('schOnlyHostVideo')?.checked       || false,
+                only_host_chat:        document.getElementById('schOnlyHostChat')?.checked        || false,
+                only_host_screenshare: document.getElementById('schOnlyHostScreenshare')?.checked || false,
             }),
         });
         if (res.redirected) { window.location.href = res.url; return; }

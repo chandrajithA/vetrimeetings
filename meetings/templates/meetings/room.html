@@ -15,10 +15,72 @@
 </head>
 <body>
 
+<!-- ══ MEETING INFO BAR (timer + participant count) ════════════════════════ -->
+{% if is_host %}
+<div id="meetingInfoBar">
+    <div class="bar-segment">
+        <span class="bar-dot" id="barLiveDot"></span>
+        <span id="barElapsedTime" class="bar-timer">00:00</span>
+    </div>
+
+    {% if meeting.max_duration_minutes > 0 %}
+    <div class="bar-divider"></div>
+    <div class="bar-segment">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity:.7">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span id="barTimeRemaining" class="bar-timer">--:-- left</span>
+    </div>
+    {% endif %}
+
+    <div class="bar-divider"></div>
+    <div class="bar-segment">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity:.7">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span id="barParticipants">1</span>
+        {% if meeting.max_participants > 0 %}
+        <span style="opacity:.5">/ {{ meeting.max_participants }}</span>
+        {% endif %}
+    </div>
+
+    {% if plan_name %}
+    <div class="bar-divider"></div>
+    <div class="bar-segment">
+        <span class="plan-badge {{ plan_name }}">{{ plan_name }}</span>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Capacity warning (shown when nearing participant limit) -->
+<div id="capacityBanner">
+    ⚠ <span id="capacityBannerText">Meeting is nearing capacity</span>
+</div>
+
+<!-- Time-up overlay (non-host) -->
+<div id="timeUpOverlay">
+    <div class="tuo-emoji">⏱</div>
+    <div class="tuo-title">Meeting time limit reached</div>
+    <div class="tuo-body" id="timeUpBody">
+        This meeting's time limit has been reached. The host will end the session shortly.
+    </div>
+    <a href="/" class="tuo-cta">Return to dashboard</a>
+</div>
+
+<!-- Upgrade nudge toast -->
+<div id="upgradeToast">
+    <button class="ut-close" onclick="document.getElementById('upgradeToast').style.display='none'">✕</button>
+    <div class="tuo-emoji" style="font-size:28px">⏱</div>
+    <div class="ut-title" id="upgradeToastTitle">Meeting time almost up</div>
+    <div class="ut-body"  id="upgradeToastBody">Your Free plan allows 40-minute meetings. Upgrade to Basic or Premium for longer sessions.</div>
+</div>
+
 <div class="meeting-wrapper" id="meetingWrapper">
 
     {% if is_host %}
-    <!-- Admit panel — auto-shows when someone knocks, auto-hides when queue is empty -->
+    <!-- Admit panel -->
     <div id="admitPanel" style="
         position:fixed; top:70px; right:16px; z-index:8000;
         background:rgba(14,17,26,0.97); border:1px solid rgba(255,255,255,0.1);
@@ -106,6 +168,15 @@
                         </button>
                     </div>
                 </div>
+                <div class="mip-row">
+                    <span class="mip-label">Limit</span>
+                    <div class="mip-val-row">
+                        <span class="mip-val">
+                            {{ meeting.max_participants }} participants
+                            {% if meeting.max_duration_minutes > 0 %} · {{ meeting.max_duration_minutes }} min{% endif %}
+                        </span>
+                    </div>
+                </div>
                 <div class="mip-divider"></div>
                 <button class="mip-copy-all-btn" onclick="mipCopy('all')" id="mipCopyAll">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -146,9 +217,7 @@
         </button>
 
         <button onclick="flipCamera()" id="flipBtn" class="ctrl-btn" title="Flip camera" style="display:none">
-            <img id="flipBtnImg"
-                 src="{% static 'meetings/images/flip.png' %}"
-                 alt="Flip" class="ctrl-icon">
+            <img id="flipBtnImg" src="{% static 'meetings/images/flip.png' %}" alt="Flip" class="ctrl-icon" data-src-front="{% static 'meetings/images/flip.png' %}" data-src-back="{% static 'meetings/images/flip.png' %}">
         </button>
 
         <button onclick="toggleScreenShare()" id="screenShareBtn" class="ctrl-btn" title="Share screen">
@@ -160,16 +229,15 @@
         </button>
 
         <button onclick="toggleChat()" id="chatBtn" class="ctrl-btn" title="Chat">
-            <img id="chatBtnImg" src="{% static 'meetings/images/chat-white.png' %}"
-                 alt="Chat" class="ctrl-icon">
+            <img id="chatBtnImg" src="{% static 'meetings/images/chat-white.png' %}" alt="Chat" class="ctrl-icon">
         </button>
 
         <button onclick="toggleParticipants()" id="participantsBtn" class="ctrl-btn" title="Participants">
-            <img id="participantsBtnImg" src="{% static 'meetings/images/participants.png' %}"
-                 alt="Participants" class="ctrl-icon">
+            <img id="participantsBtnImg" src="{% static 'meetings/images/participants.png' %}" alt="Participants" class="ctrl-icon">
         </button>
 
         {% if is_host %}
+        {% if can_record %}
         <button onclick="toggleRecording()" id="recordBtn" class="ctrl-btn" title="Record">
             <img id="recordBtnImg"
                  src="{% static 'meetings/images/record.png' %}"
@@ -177,6 +245,11 @@
                  data-src-off="{% static 'meetings/images/record-no.png' %}"
                  alt="Record" class="ctrl-icon">
         </button>
+        {% else %}
+        <button onclick="showUpgradeToast('record')" class="ctrl-btn ctrl-disabled" title="Record (upgrade required)" style="opacity:.45;">
+            <img src="{% static 'meetings/images/record.png' %}" alt="Record" class="ctrl-icon">
+        </button>
+        {% endif %}
         <button onclick="muteAll()" class="ctrl-btn" title="Mute all">
             <img src="{% static 'meetings/images/mute-all.png' %}" alt="Mute All" class="ctrl-icon">
             Mute All
@@ -201,7 +274,7 @@
         <div class="chat-input-row">
             <input type="text" id="chatInput" placeholder="Send a message…"
                    onkeydown="if(event.key==='Enter'){ sendChatMessage(this.value); this.value=''; }">
-            <button onclick="sendChatMessage(document.getElementById('chatInput').value); document.getElementById('chatInput').value='';">Send</button>
+            <button id="chatSendBtn" onclick="sendChatMessage(...)">Send</button>
         </div>
     </div>
 
@@ -217,7 +290,7 @@
 </div>
 
 
-<!-- ══ PRE-JOIN LOBBY (shown for direct room.html access without prejoin keys) ══ -->
+<!-- ══ PRE-JOIN LOBBY ══════════════════════════════════════════════════════ -->
 <div id="prejoinLobby" class="prejoin-overlay hidden">
     <div class="prejoin-box">
         <h2>Ready to join?</h2>
@@ -236,17 +309,17 @@
         </div>
 
         <div class="av-toggles" style="margin-top:14px;">
-            <button type="button" class="av-btn av-on" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
-                <img src="{% static 'meetings/images/audio-on.png' %}" id="lobbyMicIcon"
+            <button type="button" class="av-btn av-off" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
+                <img src="{% static 'meetings/images/audio-off.png' %}" id="lobbyMicIcon"
                      data-on="{% static 'meetings/images/audio-on.png' %}"
                      data-off="{% static 'meetings/images/audio-off.png' %}" alt="Mic">
-                <span id="lobbyMicLabel">Mic On</span>
+                <span id="lobbyMicLabel">Mic Off</span>
             </button>
-            <button type="button" class="av-btn av-on" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
-                <img src="{% static 'meetings/images/video-on.png' %}" id="lobbyCamIcon"
+            <button type="button" class="av-btn av-off" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
+                <img src="{% static 'meetings/images/video-off.png' %}" id="lobbyCamIcon"
                      data-on="{% static 'meetings/images/video-on.png' %}"
                      data-off="{% static 'meetings/images/video-off.png' %}" alt="Camera">
-                <span id="lobbyCamLabel">Cam On</span>
+                <span id="lobbyCamLabel">Cam Off</span>
             </button>
         </div>
 
@@ -273,10 +346,22 @@
      Django → JS globals
      ══════════════════════════════════════════════════════ -->
 <script>
-    const ROOM_NAME      = "{{ room_name }}";
-    const IS_HOST        = {{ is_host|yesno:"true,false" }};
-    const MEETING_URL    = "{{ meeting_url }}";
+    const ROOM_NAME       = "{{ room_name }}";
+    const IS_HOST         = {{ is_host|yesno:"true,false" }};
+    const MEETING_URL     = "{{ meeting_url }}";
     const MEETING_CHAT_ID = {{ chat_id|default:"null" }};
+
+    const MAX_PARTICIPANTS     = {{ max_participants|default:100 }};
+    const MAX_DURATION_MINUTES = {{ max_duration_minutes|default:0 }};
+    const ACTIVATED_AT_ISO     = "{{ activated_at_iso|default:'' }}";
+    const CAN_RECORD           = {{ can_record|yesno:"true,false" }};
+    const PLAN_NAME            = "{{ plan_name|default:'free' }}";
+
+    /* ── Meeting restrictions (enforced client-side for non-host) ── */
+    var ONLY_HOST_AUDIO       = {{ only_host_audio|default:"false"|yesno:"true,false" }};
+    var ONLY_HOST_VIDEO       = {{ only_host_video|default:"false"|yesno:"true,false" }};
+    var ONLY_HOST_CHAT        = {{ only_host_chat|default:"false"|yesno:"true,false" }};
+    var ONLY_HOST_SCREENSHARE = {{ only_host_screenshare|default:"false"|yesno:"true,false" }};
 
     const ICONS = {
         micOn:  "{% static 'meetings/images/audio-on.png' %}",
@@ -330,9 +415,7 @@ document.addEventListener('click', function (e) {
     const panel = document.getElementById('meetingInfoPanel');
     const btn   = document.getElementById('meetingInfoBtn');
     if (panel && !panel.classList.contains('hidden')) {
-        if (!panel.contains(e.target) && !btn.contains(e.target)) {
-            panel.classList.add('hidden');
-        }
+        if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
     }
 });
 
@@ -341,7 +424,6 @@ function mipCopy(type) {
     const rawId = document.getElementById('mipId')?.textContent.trim()   || '';
     const pc    = document.getElementById('mipPc')?.textContent.trim()   || '';
     const fmtId = rawId.match(/.{1,4}/g)?.join(' ') ?? rawId;
-
     let text = '', btnId = '';
     if (type === 'url')      { text = url;    btnId = 'mipCopyUrl'; }
     if (type === 'id')       { text = fmtId;  btnId = 'mipCopyId';  }
@@ -350,7 +432,6 @@ function mipCopy(type) {
         text  = `Meeting: {{ meeting.title }}\nInvite link: ${url}\nMeeting ID: ${fmtId}\nPasscode: ${pc}`;
         btnId = 'mipCopyAll';
     }
-
     navigator.clipboard.writeText(text).then(() => {
         const btn = document.getElementById(btnId);
         if (!btn) return;
@@ -365,6 +446,24 @@ function mipCopy(type) {
         ta.value = text; document.body.appendChild(ta); ta.select();
         document.execCommand('copy'); document.body.removeChild(ta);
     });
+}
+
+/* Upgrade toast helper */
+function showUpgradeToast(reason) {
+    const toast = document.getElementById("upgradeToast");
+    const title = document.getElementById("upgradeToastTitle");
+    const body  = document.getElementById("upgradeToastBody");
+    if (reason === 'record') {
+        title.textContent = "Recording requires an upgrade";
+        body.textContent  = "Recording is available on Basic and Premium plans. Upgrade to capture your meetings.";
+    } else if (reason === 'time') {
+        title.textContent = "Meeting time almost up";
+        body.textContent  = "Your " + PLAN_NAME.charAt(0).toUpperCase() + PLAN_NAME.slice(1) +
+                            " plan allows " + MAX_DURATION_MINUTES + "-minute meetings. " +
+                            "Upgrade for longer sessions.";
+    }
+    toast.style.display = "flex";
+    setTimeout(() => { toast.style.display = "none"; }, 8000);
 }
 
 document.addEventListener("click", () => {
@@ -382,21 +481,15 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
 (function () {
     const micVal = sessionStorage.getItem("prejoin_mic");
     const camVal = sessionStorage.getItem("prejoin_cam");
-
     sessionStorage.removeItem("prejoin_mic");
     sessionStorage.removeItem("prejoin_cam");
     sessionStorage.removeItem("prejoin_stream");
 
-    const displayName  = sessionStorage.getItem("join_display_name") || "";
-    const hasPrejoin   = micVal !== null;
+    const displayName = sessionStorage.getItem("join_display_name") || "";
+    const hasPrejoin  = micVal !== null;
 
-    /* ── No prejoin keys → show in-room lobby ── */
     if (!hasPrejoin) {
-        let lobbyMicOn      = true;
-        let lobbyCamOn      = true;
-        let lobbyStream     = null;
-        let lobbyPermDenied = false;
-
+        let lobbyMicOn = false, lobbyCamOn = false, lobbyStream = null, lobbyPermDenied = false;
         const lobby = document.getElementById("prejoinLobby");
         lobby.classList.remove("hidden");
         document.getElementById("meetingWrapper").style.visibility = "hidden";
@@ -417,35 +510,27 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
         };
 
         async function startLobbyPreview() {
-            const videoEl      = document.getElementById("lobbyVideo");
-            const camOffEl     = document.getElementById("lobbyCamOff");
+            const videoEl = document.getElementById("lobbyVideo");
+            const camOffEl = document.getElementById("lobbyCamOff");
             const permDeniedEl = document.getElementById("lobbyPermDenied");
-            camOffEl.classList.add("hidden");
-            permDeniedEl.classList.add("hidden");
+            camOffEl.classList.add("hidden"); permDeniedEl.classList.add("hidden");
             try {
                 lobbyStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: true,
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true,
                 });
                 lobbyStream.getAudioTracks().forEach(t => t.enabled = lobbyMicOn);
                 lobbyStream.getVideoTracks().forEach(t => t.enabled = lobbyCamOn);
                 if (lobbyCamOn && lobbyStream.getVideoTracks().length) {
-                    videoEl.srcObject = lobbyStream;
-                    videoEl.style.transform = "scaleX(-1)";
+                    videoEl.srcObject = lobbyStream; videoEl.style.transform = "scaleX(-1)";
                     camOffEl.classList.add("hidden");
-                } else {
-                    camOffEl.classList.remove("hidden");
-                }
+                } else { camOffEl.classList.remove("hidden"); }
             } catch (err) {
                 if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-                    permDeniedEl.classList.remove("hidden");
-                    lobbyPermDenied = true;
+                    permDeniedEl.classList.remove("hidden"); lobbyPermDenied = true;
                     lobbyMicOn = false; lobbyCamOn = false;
                     document.getElementById("lobbyMicBtn").classList.add("pj-disabled");
                     document.getElementById("lobbyCamBtn").classList.add("pj-disabled");
-                } else {
-                    camOffEl.classList.remove("hidden");
-                }
+                } else { camOffEl.classList.remove("hidden"); }
             }
             syncBtn("lobbyMicBtn", "lobbyMicIcon", "lobbyMicLabel", lobbyMicOn, "Mic On", "Mic Off");
             syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
@@ -462,31 +547,26 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             if (lobbyPermDenied) return;
             lobbyCamOn = !lobbyCamOn;
             syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", lobbyCamOn, "Cam On", "Cam Off");
-            const videoEl  = document.getElementById("lobbyVideo");
+            const videoEl = document.getElementById("lobbyVideo");
             const camOffEl = document.getElementById("lobbyCamOff");
             if (!lobbyCamOn) {
                 if (lobbyStream) lobbyStream.getVideoTracks().forEach(t => t.enabled = false);
-                videoEl.srcObject = null;
-                camOffEl.classList.remove("hidden");
+                videoEl.srcObject = null; camOffEl.classList.remove("hidden");
             } else {
                 camOffEl.classList.add("hidden");
                 if (lobbyStream && lobbyStream.getVideoTracks().length) {
                     lobbyStream.getVideoTracks().forEach(t => t.enabled = true);
-                    videoEl.srcObject = lobbyStream;
-                    videoEl.style.transform = "scaleX(-1)";
+                    videoEl.srcObject = lobbyStream; videoEl.style.transform = "scaleX(-1)";
                 } else {
                     try {
                         const vs = await navigator.mediaDevices.getUserMedia({
-                            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-                            audio: false,
+                            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
                         });
                         if (lobbyStream) lobbyStream.addTrack(vs.getVideoTracks()[0]);
                         else lobbyStream = vs;
-                        videoEl.srcObject = lobbyStream;
-                        videoEl.style.transform = "scaleX(-1)";
+                        videoEl.srcObject = lobbyStream; videoEl.style.transform = "scaleX(-1)";
                     } catch (e) {
-                        lobbyCamOn = false;
-                        camOffEl.classList.remove("hidden");
+                        lobbyCamOn = false; camOffEl.classList.remove("hidden");
                         syncBtn("lobbyCamBtn", "lobbyCamIcon", "lobbyCamLabel", false, "Cam On", "Cam Off");
                     }
                 }
@@ -497,28 +577,17 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             const nameInput = document.getElementById("lobbyName");
             const name = nameInput.value.trim();
             if (!name) { nameInput.focus(); return; }
-
-            const btn     = document.getElementById("lobbyJoinBtn");
-            const label   = document.getElementById("lobbyJoinLabel");
+            const btn = document.getElementById("lobbyJoinBtn");
+            const label = document.getElementById("lobbyJoinLabel");
             const spinner = document.getElementById("lobbyJoinSpinner");
             btn.disabled = true; label.textContent = "Joining…"; spinner.classList.remove("hidden");
-
             sessionStorage.setItem("join_display_name", name);
-
             document.getElementById("lobbyVideo").srcObject = null;
             if (lobbyStream) lobbyStream.getTracks().forEach(t => t.enabled = false);
-            window._prejoinStream = lobbyStream;
-            lobbyStream = null;
-
+            window._prejoinStream = lobbyStream; lobbyStream = null;
             lobby.classList.add("hidden");
             document.getElementById("meetingWrapper").style.visibility = "visible";
-
-            initRoom({
-                startMicOn:    lobbyMicOn,
-                startCamOn:    lobbyCamOn,
-                previewStream: window._prejoinStream,
-                displayName:   name,
-            });
+            initRoom({ startMicOn: lobbyMicOn, startCamOn: lobbyCamOn, previewStream: window._prejoinStream, displayName: name });
             window._prejoinStream = null;
         };
 
@@ -527,17 +596,14 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             document.getElementById("lobbyAvatar").textContent =
                 userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
         }
-
         startLobbyPreview();
         return;
     }
 
-    /* ── Has prejoin keys → go straight into room ── */
     const startMicOn    = micVal !== "0";
     const startCamOn    = camVal !== "0";
     const previewStream = window._prejoinStream || null;
     if (window._prejoinStream) window._prejoinStream = null;
-
     document.addEventListener("DOMContentLoaded", function () {
         initRoom({ startMicOn, startCamOn, previewStream, displayName });
     });
@@ -546,7 +612,7 @@ if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
 
 <script>
 /* ══════════════════════════════════════════════════════
-   Deactivate beacon on host navigation before meeting starts
+   Deactivate beacon on host navigation
    ══════════════════════════════════════════════════════ */
 const CSRF_TOKEN = "{{ csrf_token }}";
 window._meetingFullyStarted = false;
@@ -557,133 +623,76 @@ window.addEventListener('pagehide', function () {
     if (!window._meetingFullyStarted) {
         navigator.sendBeacon(
             '/meeting/deactivate/{{ room_name }}/',
-            new Blob(
-                [JSON.stringify({ csrfmiddlewaretoken: CSRF_TOKEN })],
-                { type: 'application/json' }
-            )
+            new Blob([JSON.stringify({ csrfmiddlewaretoken: CSRF_TOKEN })], { type: 'application/json' })
         );
     }
 });
 {% else %}
 window.addEventListener('pagehide', function () {
-    const fd = new FormData();
-    fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+    const fd = new FormData(); fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
     navigator.sendBeacon('/meeting/knock-cancel/{{ room_name }}/', fd);
 });
 {% endif %}
 
 
 {% if is_host %}
-/* ══════════════════════════════════════════════════════
-   HOST — knock polling & admit/deny panel
-   ══════════════════════════════════════════════════════ */
+/* ── HOST: knock polling ── */
 (function () {
-    const ROOM    = "{{ room_name }}";
-    const CSRF    = "{{ csrf_token }}";
-    const POLL_MS = 15000;   /* match waiting-page interval */
-
-    let _knocks = [];
-    let _pollT  = null;
+    const ROOM = "{{ room_name }}";
+    const CSRF = "{{ csrf_token }}";
+    const POLL_MS = 15000;
+    let _knocks = [], _pollT = null;
 
     function post(url) {
-        return fetch(url, {
-            method: "POST",
-            headers: { "X-CSRFToken": CSRF },
-        }).then(r => r.json());
+        return fetch(url, { method: "POST", headers: { "X-CSRFToken": CSRF } }).then(r => r.json());
     }
-
-    function escapeHtml(t) {
-        return String(t)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+    function escH(t) {
+        return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     }
-
     function renderKnocks(knocks) {
         const list  = document.getElementById("admitList");
         const badge = document.getElementById("admitBadgeCount");
         const panel = document.getElementById("admitPanel");
         if (!list || !panel) return;
-
         badge.textContent = knocks.length;
-
-        if (knocks.length === 0) {
-            panel.style.display = "none";
-            list.innerHTML = "";
-            return;
-        }
-
-        /* Auto-show when someone knocks */
+        if (!knocks.length) { panel.style.display = "none"; list.innerHTML = ""; return; }
         panel.style.display = "flex";
-
-        /* Reconcile: remove rows for people who left */
         const incoming = new Set(knocks.map(k => String(k.user_id)));
-        list.querySelectorAll(".admit-row").forEach(r => {
-            if (!incoming.has(r.dataset.uid)) r.remove();
-        });
-
-        /* Add new rows */
-        const existing = new Set(
-            [...list.querySelectorAll(".admit-row")].map(r => r.dataset.uid)
-        );
+        list.querySelectorAll(".admit-row").forEach(r => { if (!incoming.has(r.dataset.uid)) r.remove(); });
+        const existing = new Set([...list.querySelectorAll(".admit-row")].map(r => r.dataset.uid));
         knocks.forEach(k => {
             if (existing.has(String(k.user_id))) return;
-            const initials = (k.display_name || "?")
-                .split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+            const initials = (k.display_name || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
             const row = document.createElement("div");
-            row.className   = "admit-row";
-            row.dataset.uid = String(k.user_id);
+            row.className = "admit-row"; row.dataset.uid = String(k.user_id);
             row.innerHTML = `
                 <div class="admit-avatar">${initials}</div>
-                <div class="admit-name">${escapeHtml(k.display_name)}</div>
+                <div class="admit-name">${escH(k.display_name)}</div>
                 <button class="admit-accept" onclick="admitUser(${k.user_id}, this)">Admit</button>
                 <button class="admit-deny"   onclick="denyUser(${k.user_id},  this)">Deny</button>
             `;
             list.appendChild(row);
         });
     }
-
     async function pollKnocks() {
         try {
             const res  = await fetch(`/meeting/knock-list/${ROOM}/`);
             const data = await res.json();
-            _knocks = data.knocks || [];
-            renderKnocks(_knocks);
-        } catch (e) { /* network blip — try again next interval */ }
+            _knocks = data.knocks || []; renderKnocks(_knocks);
+        } catch(e) {}
     }
-
-    /* ── Exposed globals ── */
     window.admitUser = async function (userId, btn) {
         btn.disabled = true; btn.textContent = "…";
-        try {
-            await post(`/meeting/admit/${ROOM}/${userId}/`);
-            btn.closest(".admit-row")?.remove();
-            _knocks = _knocks.filter(k => k.user_id !== userId);
-            renderKnocks(_knocks);
-        } catch (e) { btn.disabled = false; btn.textContent = "Admit"; }
+        try { await post(`/meeting/admit/${ROOM}/${userId}/`); btn.closest(".admit-row")?.remove(); _knocks = _knocks.filter(k => k.user_id !== userId); renderKnocks(_knocks); }
+        catch(e) { btn.disabled = false; btn.textContent = "Admit"; }
     };
-
     window.denyUser = async function (userId, btn) {
         btn.disabled = true; btn.textContent = "…";
-        try {
-            await post(`/meeting/deny/${ROOM}/${userId}/`);
-            btn.closest(".admit-row")?.remove();
-            _knocks = _knocks.filter(k => k.user_id !== userId);
-            renderKnocks(_knocks);
-        } catch (e) { btn.disabled = false; btn.textContent = "Deny"; }
+        try { await post(`/meeting/deny/${ROOM}/${userId}/`); btn.closest(".admit-row")?.remove(); _knocks = _knocks.filter(k => k.user_id !== userId); renderKnocks(_knocks); }
+        catch(e) { btn.disabled = false; btn.textContent = "Deny"; }
     };
-
-    window.admitAll = async function () {
-        await post(`/meeting/admit-all/${ROOM}/`);
-        _knocks = [];
-        renderKnocks([]);
-    };
-
-    window.denyAll = async function () {
-        await post(`/meeting/deny-all/${ROOM}/`);
-        _knocks = [];
-        renderKnocks([]);
-    };
+    window.admitAll = async function () { await post(`/meeting/admit-all/${ROOM}/`); _knocks = []; renderKnocks([]); };
+    window.denyAll  = async function () { await post(`/meeting/deny-all/${ROOM}/`);  _knocks = []; renderKnocks([]); };
 
     pollKnocks();
     _pollT = setInterval(pollKnocks, POLL_MS);

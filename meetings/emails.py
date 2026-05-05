@@ -5,7 +5,7 @@ from django.conf import settings
 
 def send_meeting_invite(meeting, invitee_emails):
     """Send a meeting invite email to a list of email addresses."""
-    subject = f"You're invited: {meeting.title}"
+    subject = f"Vetri Meeting Invite: {meeting.title}"
 
     for email in invitee_emails:
         context = {

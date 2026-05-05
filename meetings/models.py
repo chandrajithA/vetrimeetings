@@ -3,6 +3,7 @@ import uuid
 import random
 import string
 from django.conf import settings
+from django.utils import timezone
 
 User = settings.AUTH_USER_MODEL
 
@@ -15,6 +16,109 @@ def _generate_passcode():
     """8-character alphanumeric passcode (uppercase + digits), e.g. A3K9PZ2W"""
     chars = string.ascii_uppercase + string.digits
     return ''.join(random.choices(chars, k=8))
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SUBSCRIPTION SYSTEM
+# ══════════════════════════════════════════════════════════════════════════════
+
+class SubscriptionPlan(models.Model):
+    """
+    Defines the tiers available (Free / Basic / Premium).
+    Seed via: python manage.py create_subscription_plans
+    """
+
+    PLAN_CHOICES = [
+        ('free',    'Free'),
+        ('basic',   'Basic'),
+        ('premium', 'Premium'),
+    ]
+
+    name         = models.CharField(max_length=20, choices=PLAN_CHOICES, unique=True)
+    display_name = models.CharField(max_length=50)
+    description  = models.TextField(blank=True, default="")
+
+    # ── Hard limits ──────────────────────────────────────────────────────────
+    # 0 = unlimited
+    max_duration_minutes = models.PositiveIntegerField(
+        default=40,
+        help_text="Maximum meeting duration in minutes. 0 = unlimited.",
+    )
+    max_participants = models.PositiveIntegerField(
+        default=100,
+        help_text="Maximum simultaneous participants per meeting.",
+    )
+
+    # ── Feature flags ────────────────────────────────────────────────────────
+    can_record          = models.BooleanField(default=False)
+    can_use_waiting_room = models.BooleanField(default=False)
+    can_schedule        = models.BooleanField(default=False)
+
+    # ── Pricing (informational) ──────────────────────────────────────────────
+    price_monthly = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0.00,
+        help_text="Monthly price in USD (for display).",
+    )
+
+    class Meta:
+        ordering = ['price_monthly']
+
+    def __str__(self):
+        return f"{self.display_name} (max {self.max_participants} participants, " \
+               f"{'unlimited' if self.max_duration_minutes == 0 else str(self.max_duration_minutes) + ' min'})"
+
+    @property
+    def is_unlimited_duration(self):
+        return self.max_duration_minutes == 0
+
+    @property
+    def is_unlimited_participants(self):
+        return self.max_participants == 0
+
+
+class UserSubscription(models.Model):
+    """
+    One row per user — links a user to their active SubscriptionPlan.
+    Created automatically (Free plan) the first time it is needed.
+    """
+
+    user       = models.OneToOneField(User, on_delete=models.CASCADE, related_name='subscription')
+    plan       = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT, related_name='subscribers')
+    started_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True,
+                                      help_text="Null = never expires (lifetime or free).")
+    is_active  = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name        = "User Subscription"
+        verbose_name_plural = "User Subscriptions"
+
+    def __str__(self):
+        return f"{self.user} → {self.plan.display_name}"
+
+    @property
+    def is_valid(self):
+        if not self.is_active:
+            return False
+        if self.expires_at and self.expires_at < timezone.now():
+            return False
+        return True
+
+    @property
+    def effective_plan(self):
+        """Returns the plan if valid, otherwise falls back to the free plan."""
+        if self.is_valid:
+            return self.plan
+        try:
+            return SubscriptionPlan.objects.get(name='free')
+        except SubscriptionPlan.DoesNotExist:
+            return self.plan
+        
+        
+# ══════════════════════════════════════════════════════════════════════════════
+# MEETING
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 class Meeting(models.Model):
@@ -44,7 +148,45 @@ class Meeting(models.Model):
     repeat_end_date = models.DateField(blank=True, null=True)
     is_scheduled    = models.BooleanField(default=False)
     
+    # ── Subscription-derived limits (snapshotted at creation time) ────────────
+    # Snapshotting means a plan downgrade won't cut short a meeting already
+    # in progress, and old meeting records preserve their original limits.
+    max_participants     = models.PositiveIntegerField(
+        default=100,
+        help_text="Max simultaneous participants (copied from host's plan at creation).",
+    )
+    max_duration_minutes = models.PositiveIntegerField(
+        default=40,
+        help_text="Max meeting duration in minutes. 0 = unlimited.",
+    )
+
+    # ── Runtime tracking ─────────────────────────────────────────────────────
+    activated_at      = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the host first activated (started) the meeting.",
+    )
+    
+    only_host_audio       = models.BooleanField(
+        default=False,
+        help_text="Only host can speak; participant mics are disabled.",
+    )
+    only_host_video       = models.BooleanField(
+        default=False,
+        help_text="Participants cannot turn on their cameras.",
+    )
+    only_host_chat        = models.BooleanField(
+        default=False,
+        help_text="Participants cannot send chat messages (read-only).",
+    )
+    only_host_screenshare = models.BooleanField(
+        default=False,
+        help_text="Participants cannot share their screen.",
+    )
+    
     created_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.room_name})"
 
     def __str__(self):
         return f"{self.title} ({self.room_name})"
@@ -53,7 +195,6 @@ class Meeting(models.Model):
         if not self.room_name:
             self.room_name = uuid.uuid4().hex[:10]
         if not self.meeting_id:
-            # Ensure uniqueness
             mid = _generate_meeting_id()
             while Meeting.objects.filter(meeting_id=mid).exists():
                 mid = _generate_meeting_id()
@@ -61,6 +202,36 @@ class Meeting(models.Model):
         if not self.passcode:
             self.passcode = _generate_passcode()
         super().save(*args, **kwargs)
+        
+        
+    # ── Derived helpers ───────────────────────────────────────────────────────
+
+    @property
+    def seconds_remaining(self):
+        """
+        Returns (int) seconds left, or None if unlimited or not yet started.
+        Negative value means the meeting has already overrun.
+        """
+        if self.max_duration_minutes == 0 or not self.activated_at:
+            return None
+        elapsed = (timezone.now() - self.activated_at).total_seconds()
+        return int(self.max_duration_minutes * 60 - elapsed)
+
+    @property
+    def is_time_limited(self):
+        return self.max_duration_minutes > 0
+
+    @property
+    def duration_limit_display(self):
+        if self.max_duration_minutes == 0:
+            return "Unlimited"
+        h, m = divmod(self.max_duration_minutes, 60)
+        return f"{h}h {m:02d}m" if h else f"{m} min"
+    
+    
+# ══════════════════════════════════════════════════════════════════════════════
+# REST OF MODELS (unchanged)
+# ══════════════════════════════════════════════════════════════════════════════
         
         
 class MeetingInvitee(models.Model):
@@ -180,6 +351,7 @@ class DirectChatMessage(models.Model):
     text       = models.TextField()
     sent_at    = models.DateTimeField(auto_now_add=True)
     is_deleted = models.BooleanField(default=False)
+    is_read    = models.BooleanField(default=False, db_index=True)
 
     def __str__(self):
         return f"{self.sender} @ {self.sent_at:%H:%M}: {self.text[:40]}"
@@ -203,3 +375,33 @@ class MeetingTranscript(models.Model):
         if h:
             return f"{h}h {m:02d}m {sec:02d}s"
         return f"{m:02d}:{sec:02d}"
+    
+    
+class UserChatRead(models.Model):
+    """Tracks when a user last read a group chat."""
+    user        = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    chat        = models.ForeignKey('MeetingChat', on_delete=models.CASCADE)
+    last_read_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'chat')
+        indexes = [models.Index(fields=['user', 'chat'])]
+        
+        
+        
+class MeetingCapacityQueue(models.Model):
+    """
+    Tracks users who tried to join but the meeting was at capacity.
+    Ordered by created_at — first-come-first-served.
+    """
+    meeting      = models.ForeignKey('Meeting', on_delete=models.CASCADE, related_name='capacity_queue')
+    user         = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    display_name = models.CharField(max_length=120, blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('meeting', 'user')
+        ordering        = ['created_at']
+
+    def __str__(self):
+        return f"{self.display_name or self.user} queued for {self.meeting}"

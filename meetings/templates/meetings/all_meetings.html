@@ -105,16 +105,6 @@
       <input type="text" id="editRepeatEnd" placeholder="Select date (optional)" readonly>
     </div>
 
-    <div class="mp-field">
-      <label>Invitees</label>
-      <div class="mp-invitee-row">
-        <input type="email" id="editInviteeInput" placeholder="name@example.com"
-               onkeydown="if(event.key==='Enter'){addEditInvitee();event.preventDefault();}">
-        <button type="button" class="mp-add-btn" onclick="addEditInvitee()">Add</button>
-      </div>
-      <div id="editInviteeList" class="mp-chips"></div>
-    </div>
-
     <div class="mp-field mp-toggle-row" style="margin-top:4px;">
       <div style="display:flex;flex-direction:column;gap:2px;">
         <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
@@ -128,6 +118,67 @@
         <input type="checkbox" id="editRequireAdmission">
         <span class="mp-slider"></span>
       </label>
+    </div>
+
+    <!-- Meeting Restrictions -->
+    <div class="mp-field" style="margin-top:8px;">
+        <label style="font-size:13px;font-weight:600;color:var(--color-text,#e8eaf0);margin-bottom:10px;display:block;letter-spacing:.02em;">
+            Meeting Restrictions
+        </label>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can speak</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' microphones are disabled</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="editOnlyHostAudio">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot turn on video</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' cameras are disabled</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="editOnlyHostVideo">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can chat</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants can read but not send messages</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="editOnlyHostChat">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot share screen</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Only the host can share their screen</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="editOnlyHostScreenshare">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <div class="mp-field">
+      <label>Invitees</label>
+      <div class="mp-invitee-row">
+        <input type="email" id="editInviteeInput" placeholder="name@example.com"
+               onkeydown="if(event.key==='Enter'){addEditInvitee();event.preventDefault();}">
+        <button type="button" class="mp-add-btn" onclick="addEditInvitee()">Add</button>
+      </div>
+      <div id="editInviteeList" class="mp-chips"></div>
     </div>
 
     <button type="button" class="mp-submit-btn" id="editSubmitBtn" onclick="submitEdit()">
@@ -197,6 +248,71 @@
       <label>Repeat ends on</label>
       <input type="text" id="schRepeatEnd" placeholder="Select date (optional)" readonly>
       <span class="mp-hint">Leave blank for no end date</span>
+    </div>
+
+    <div class="mp-field mp-toggle-row" style="margin-top:4px;">
+        <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:14px;font-weight:500;color:var(--color-text,#e8eaf0);">
+                Require join permission
+            </label>
+            <span style="font-size:12px;color:var(--color-text-secondary,#8b90a0);">
+                Participants will wait for your approval before entering
+            </span>
+        </div>
+        <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+            <input type="checkbox" id="schRequireAdmission">
+            <span class="mp-slider"></span>
+        </label>
+    </div>
+
+    <div class="mp-field" style="margin-top:8px;">
+        <label style="font-size:13px;font-weight:600;color:var(--color-text,#e8eaf0);margin-bottom:10px;display:block;letter-spacing:.02em;">
+            Meeting Restrictions
+        </label>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can speak</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' microphones are disabled</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="schOnlyHostAudio">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot turn on video</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants' cameras are disabled</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="schOnlyHostVideo">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Only host can chat</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Participants can read but not send messages</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="schOnlyHostChat">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
+
+        <div class="mp-toggle-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:13px;font-weight:500;color:var(--color-text,#e8eaf0);">Participants cannot share screen</span>
+                <span style="font-size:11px;color:var(--color-text-secondary,#8b90a0);">Only the host can share their screen</span>
+            </div>
+            <label class="mp-switch" style="flex-shrink:0;margin-left:auto;">
+                <input type="checkbox" id="schOnlyHostScreenshare">
+                <span class="mp-slider"></span>
+            </label>
+        </div>
     </div>
 
     <div class="mp-field">
@@ -487,6 +603,10 @@ function openEditModal(m){
   document.getElementById('editRepeat').value    = m.repeat || 'none';
   document.getElementById('editAllDay').checked  = m.is_all_day;
   document.getElementById('editRequireAdmission').checked   = m.require_admission || false;
+  document.getElementById('editOnlyHostAudio').checked       = m.only_host_audio       || false;
+  document.getElementById('editOnlyHostVideo').checked       = m.only_host_video       || false;
+  document.getElementById('editOnlyHostChat').checked        = m.only_host_chat        || false;
+  document.getElementById('editOnlyHostScreenshare').checked = m.only_host_screenshare || false;
 
   editInvitees = m.invitees ? [...m.invitees] : [];
   renderEditInvitees();
@@ -587,7 +707,15 @@ async function submitEdit(){
     const res = await fetch(`/meeting/edit/${id}/`, {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
-      body:JSON.stringify({title,start,end,all_day:allDay,repeat,repeat_end:repeatEnd,invitees:editInvitees,require_admission:document.getElementById('editRequireAdmission')?.checked||false}),
+      body: JSON.stringify({
+          title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd,
+          invitees: editInvitees,
+          require_admission:      document.getElementById('editRequireAdmission')?.checked       || false,
+          only_host_audio:        document.getElementById('editOnlyHostAudio')?.checked          || false,
+          only_host_video:        document.getElementById('editOnlyHostVideo')?.checked          || false,
+          only_host_chat:         document.getElementById('editOnlyHostChat')?.checked           || false,
+          only_host_screenshare:  document.getElementById('editOnlyHostScreenshare')?.checked   || false,
+      }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error||'Failed to update');
@@ -666,6 +794,8 @@ function closeScheduleModal(){
   document.getElementById('scheduleError').classList.add('hidden');
   document.getElementById('scheduleSuccess').classList.add('hidden');
   if(_fpSR) _fpSR.clear();
+  ['schRequireAdmission','schOnlyHostAudio','schOnlyHostVideo','schOnlyHostChat','schOnlyHostScreenshare'].forEach(id => { const el = document.getElementById(id); if(el) el.checked = false; });
+  
 }
 
 function toggleAllDay(){
@@ -723,7 +853,15 @@ async function submitSchedule(){
     const res = await fetch('/meeting/schedule/',{
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
-      body:JSON.stringify({title,start,end,all_day:allDay,repeat,repeat_end:repeatEnd,invitees:schInvitees}),
+      body: JSON.stringify({
+          title, start, end, all_day: allDay, repeat, repeat_end: repeatEnd,
+          invitees: schInvitees,
+          require_admission:      document.getElementById('schRequireAdmission')?.checked        || false,
+          only_host_audio:        document.getElementById('schOnlyHostAudio')?.checked           || false,
+          only_host_video:        document.getElementById('schOnlyHostVideo')?.checked           || false,
+          only_host_chat:         document.getElementById('schOnlyHostChat')?.checked            || false,
+          only_host_screenshare:  document.getElementById('schOnlyHostScreenshare')?.checked    || false,
+      }),
     });
     const data = await res.json();
     if(!res.ok) throw new Error(data.error||'Failed to schedule');

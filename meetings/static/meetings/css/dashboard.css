@@ -979,12 +979,13 @@
    ══════════════════════════════════════ */
  
 @media (max-width: 600px) {
-    .scheduled-section      { padding: 8px 16px 24px; }
+    .scheduled-section      { padding: 10px 5px 24px 5px; }
     .meeting-card-time      { min-width: 56px; padding: 12px 8px 12px 10px; }
     .mc-title               { max-width: 130px; }
     .meeting-card-actions   { min-width: 110px; padding: 10px 8px 10px 4px; }
     .mact-btn               { padding: 5px 8px; }
     .mact-pair .mact-btn    { font-size: 9.5px; padding: 4px; }
+    
 }
  
 

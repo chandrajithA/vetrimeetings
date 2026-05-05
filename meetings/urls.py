@@ -37,6 +37,8 @@ urlpatterns = [
     path('meeting/deny/<str:room_name>/<int:user_id>/', deny_user, name='deny_user'),
     path('meeting/admit-all/<str:room_name>/', admit_all_users, name='admit_all_users'),
     path('meeting/deny-all/<str:room_name>/', deny_all_users, name='deny_all_users'),
+    path('meeting/capacity-status/<str:room_name>/', capacity_status, name='capacity_status'),
+    path('meeting/capacity-queue/<str:room_name>/', capacity_queue_list, name='capacity_queue_list'),
     
     path('recordings/', recordings_hub, name='recordings_hub'),
     path('recordings/delete/<int:recording_id>/', delete_recording, name='delete_recording'),

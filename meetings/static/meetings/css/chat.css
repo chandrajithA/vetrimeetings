@@ -530,3 +530,68 @@ root{
     color: var(--text-time);
     margin-left: 6px;
 }
+
+
+.vt-ws-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+}
+.vt-ws-dot.connected {
+    background: #16a34a;
+    box-shadow: 0 0 5px #16a34a88;
+}
+.vt-ws-dot.disconnected {
+    background: #dc2626;
+    animation: wsPulse 1.2s infinite;
+}
+@keyframes wsPulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+/* ── Unread badges in conv list ─────────────────────────── */
+.vt-conv-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.vt-conv-last-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 2px;
+}
+.vt-conv-name-row .vt-conv-time {
+    font-size: 11px; color: rgba(0,0,0,0.4); white-space: nowrap; flex-shrink: 0;
+}
+.vt-conv-name-row .vt-conv-time.unread-time {
+    color: #6366f1; font-weight: 600;
+}
+.vt-conv-name.unread-name { font-weight: 700; color: #111827; }
+.vt-conv-last.unread-preview { color: #374151; font-weight: 500; font-style: normal; }
+.vt-unread-badge {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    min-width: 18px; height: 18px;
+    padding: 0 5px;
+    border-radius: 100px;
+    background: #6366f1;
+    color: #fff;
+    font-size: 10.5px; font-weight: 700;
+    flex-shrink: 0;
+    animation: badgePop 0.2s ease-out;
+}
+@keyframes badgePop {
+    0%   { transform: scale(0); }
+    70%  { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+/* Remove old .vt-conv-time from old layout — new layout uses name-row */
+/* Override: hide the standalone .vt-conv-time that the old HTML had */
+.vt-conv-item > .vt-conv-time { display: none; }

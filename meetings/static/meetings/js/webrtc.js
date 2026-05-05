@@ -1,13 +1,13 @@
 /**
  * webrtc.js — Vetri Meetings
  *
- * Fixes in this version:
- *   1. initRoom() passes the lobby display-name to /meeting/token/ so LiveKit
- *      uses the name the user typed, not the DB name.
- *   2. leaveMeeting() / endMeeting() clear ALL prejoin sessionStorage keys so
- *      the next dashboard visit always shows the preview again.
- *   3. Preview sessionStorage keys are deleted immediately after being read so
- *      a hard-refresh of the room page also shows the lobby.
+ * Changes in this version:
+ *   • Meeting timer — counts up elapsed time, counts down remaining time.
+ *   • Participant-limit guard — warns host when nearing/at capacity.
+ *   • Auto-end for host when time limit is reached.
+ *   • Non-host time-up overlay when limit is exceeded.
+ *   • Upgrade nudge toast at the 5-minute warning mark.
+ *   • get_token capacity check handled (403 → show "Meeting full" screen).
  */
 
 const { Room, RoomEvent, Track, ConnectionState, createLocalVideoTrack } = LivekitClient;
@@ -24,7 +24,7 @@ let allParticipants = [];
 let sidebarPage = 0;
 function getSidebarPageSize() { return window.innerWidth <= 640 ? 2 : 4; }
 
-let facingMode    = "user";
+let facingMode     = "user";
 let flipInProgress = false;
 
 let mediaRecorder  = null;
@@ -41,14 +41,22 @@ let meetingEndedByHost  = false;
 
 let _recordingStartTime = null;
 
-let transcriptLines    = [];
-let transcriptActive   = false;
+let transcriptLines     = [];
+let transcriptActive    = false;
 let transcriptStartTime = null;
-let _recognition       = null;
+let _recognition        = null;
 let _recognitionRunning = false;
 
+// ── Meeting-timer state ───────────────────────────────────────────────────
+let _timerInterval         = null;
+let _timerStartEpoch       = null;   // epoch ms when the meeting was activated
+let _maxDurationMs         = 0;      // 0 = unlimited
+let _warningShown          = false;  // 5-min warning already shown?
+let _timeUpShown           = false;
+let _capacityWarningShown  = false;
 
-/* ── Helper: wipe all prejoin keys so preview always re-asks next time ── */
+
+/* ── Helper: wipe all prejoin keys ── */
 function _clearPrejoinStorage() {
     sessionStorage.removeItem("prejoin_mic");
     sessionStorage.removeItem("prejoin_cam");
@@ -118,30 +126,285 @@ async function _getUnmirroredTrack(constraints) {
 }
 
 //////////////////////////////////////////////////////
+// ⏱  MEETING TIMER
+//////////////////////////////////////////////////////
+
+/**
+ * Start the elapsed / countdown timer displayed in the info bar.
+ *
+ * @param {number} maxDurationMinutes  - 0 = unlimited
+ * @param {string} activatedAtIso      - ISO timestamp of when host started meeting, or ""
+ */
+// In startMeetingTimer(), after setting _maxDurationMs, add this so the
+// countdown displays immediately on load rather than showing the plan default:
+function startMeetingTimer(maxDurationMinutes, activatedAtIso) {
+    if (_timerInterval) clearInterval(_timerInterval);
+
+    if (activatedAtIso) {
+        _timerStartEpoch = new Date(activatedAtIso).getTime();
+    } else {
+        _timerStartEpoch = Date.now();
+    }
+
+    _maxDurationMs = maxDurationMinutes > 0 ? maxDurationMinutes * 60 * 1000 : 0;
+    _warningShown  = false;
+    _timeUpShown   = false;
+
+    // Update the countdown display immediately before first tick
+    // so it shows correct remaining time, not the plan default from the template
+    if (_maxDurationMs > 0) {
+        const remEl = document.getElementById("barTimeRemaining");
+        const elapsed = Date.now() - _timerStartEpoch;
+        const remainingSec = Math.max(0, Math.floor((_maxDurationMs - elapsed) / 1000));
+        if (remEl) remEl.textContent = _formatDuration(remainingSec) + " left";
+    }
+
+    _timerInterval = setInterval(_tickTimer, 1000);
+    _tickTimer();
+}
+
+function _tickTimer() {
+    if (!_timerStartEpoch) return;
+
+    const elapsed   = Date.now() - _timerStartEpoch;
+    const elapsedSec = Math.floor(elapsed / 1000);
+
+    // Update elapsed time display
+    const elEl = document.getElementById("barElapsedTime");
+    if (elEl) elEl.textContent = _formatDuration(elapsedSec);
+
+    // Update participant count in bar
+    const pCount = Object.keys(participantStatuses).length;
+    const pEl    = document.getElementById("barParticipants");
+    if (pEl) pEl.textContent = String(pCount);
+
+    if (_maxDurationMs === 0) return;   // unlimited — nothing more to do
+
+    const remaining    = _maxDurationMs - elapsed;
+    const remainingSec = Math.max(0, Math.floor(remaining / 1000));
+
+    // Update countdown display
+    const remEl = document.getElementById("barTimeRemaining");
+    if (remEl) remEl.textContent = _formatDuration(remainingSec) + " left";
+
+    // Colour the bar based on urgency
+    const bar = document.getElementById("meetingInfoBar");
+    if (bar) {
+        bar.classList.toggle("warning",  remainingSec <= 300 && remainingSec > 60);
+        bar.classList.toggle("critical", remainingSec <= 60);
+    }
+
+    // 5-minute warning
+    if (remainingSec <= 300 && remainingSec > 295 && !_warningShown) {
+        _warningShown = true;
+        if (IS_HOST && typeof showUpgradeToast === "function") {
+            showUpgradeToast('time');
+        } else {
+            showStatus("⏱ 5 minutes remaining in this meeting.");
+            setTimeout(hideStatus, 8000);
+        }
+    }
+
+    // Time's up
+    if (remainingSec <= 0 && !_timeUpShown) {
+        _timeUpShown = true;
+        _onTimeUp();
+    }
+}
+
+function stopMeetingTimer() {
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+}
+
+function _onTimeUp() {
+    if (IS_HOST) {
+        // Host auto-ends the meeting
+        showStatus("⏱ Meeting time limit reached. Ending meeting…");
+        setTimeout(() => { endMeeting(); }, 2500);
+    } else {
+        // Non-host sees an overlay
+        const overlay = document.getElementById("timeUpOverlay");
+        if (overlay) overlay.style.display = "flex";
+    }
+}
+
+//////////////////////////////////////////////////////
+// 👥  PARTICIPANT CAPACITY CHECK
+//////////////////////////////////////////////////////
+
+function _checkCapacity() {
+    if (!MAX_PARTICIPANTS || MAX_PARTICIPANTS === 0) return;
+
+    const count = Object.keys(participantStatuses).length;
+    const pct   = count / MAX_PARTICIPANTS;
+
+    const banner = document.getElementById("capacityBanner");
+    const text   = document.getElementById("capacityBannerText");
+
+    if (pct >= 1.0) {
+        // At limit
+        if (banner && text) {
+            text.textContent = `Meeting is full (${count}/${MAX_PARTICIPANTS})`;
+            banner.style.display = "flex";
+        }
+        if (IS_HOST && !_capacityWarningShown) {
+            _capacityWarningShown = true;
+            showStatus(`⚠ Meeting is at capacity (${count}/${MAX_PARTICIPANTS} participants).`);
+            setTimeout(hideStatus, 6000);
+        }
+    } else if (pct >= 0.9) {
+        // 90 % — approaching limit
+        if (banner && text) {
+            text.textContent = `Nearing capacity: ${count}/${MAX_PARTICIPANTS} participants`;
+            banner.style.display = "flex";
+        }
+    } else {
+        if (banner) banner.style.display = "none";
+    }
+}
+
+
+
+
+
+//////////////////////////////////////////////////////
+// 🔒  MEETING RESTRICTIONS  (non-host only)
+//////////////////////////////////////////////////////
+
+function _applyMeetingRestrictions() {
+    if (IS_HOST) return;   // host is never restricted
+
+    // ── Audio ────────────────────────────────────────────────────────────────
+    if (ONLY_HOST_AUDIO) {
+        // DO NOT call toggleAudio() here — tracks haven't been published yet
+        // when this runs inside initRoom. Just set the flag; the publishing
+        // block below reads audioEnabled before deciding whether to publish.
+        audioEnabled = false;
+        const btn = document.getElementById("audioBtn");
+        if (btn) {
+            btn.disabled = true;
+            btn.title    = "Host has disabled participant audio";
+            btn.style.opacity = "0.35";
+            btn.style.cursor  = "not-allowed";
+            btn.onclick = () => _showRestrictionToast("The host has disabled participant audio.");
+        }
+        setBtnIcon("audioBtnImg", false);
+    }
+
+    // ── Video ─────────────────────────────────────────────────────────────────
+    if (ONLY_HOST_VIDEO) {
+        // Same reasoning — just set the flag.
+        videoEnabled = false;
+        const btn = document.getElementById("videoBtn");
+        if (btn) {
+            btn.disabled = true;
+            btn.title    = "Host has disabled participant video";
+            btn.style.opacity = "0.35";
+            btn.style.cursor  = "not-allowed";
+            btn.onclick = () => _showRestrictionToast("The host has disabled participant video.");
+        }
+        const flipBtn = document.getElementById("flipBtn");
+        if (flipBtn) flipBtn.style.display = "none";
+        setBtnIcon("videoBtnImg", false);
+    }
+
+    // ── Screen share ──────────────────────────────────────────────────────────
+    if (ONLY_HOST_SCREENSHARE) {
+        const btn = document.getElementById("screenShareBtn");
+        if (btn) {
+            btn.disabled = true;
+            btn.title    = "Host has disabled participant screen sharing";
+            btn.style.opacity = "0.35";
+            btn.style.cursor  = "not-allowed";
+            btn.onclick = () => _showRestrictionToast("The host has disabled screen sharing.");
+        }
+    }
+
+    // ── Chat ──────────────────────────────────────────────────────────────────
+    if (ONLY_HOST_CHAT) {
+        const input = document.getElementById("chatInput");
+        const sendBtn = document.getElementById("chatSendBtn");
+        if (input) {
+            input.disabled = true;
+            input.placeholder = "Chat is view-only (host only can send)";
+        }
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.style.opacity = "0.35";
+            sendBtn.title = "Host has disabled participant chat";
+        }
+        window._participantChatBlocked = true;
+    }
+}
+
+function _showRestrictionToast(msg) {
+    let toast = document.getElementById("restrictionToast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "restrictionToast";
+        toast.style.cssText = [
+            "position:fixed;bottom:90px;left:50%;transform:translateX(-50%)",
+            "background:rgba(20,22,32,0.95);color:#e8eaf0",
+            "padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500",
+            "z-index:9999;pointer-events:none;border:1px solid rgba(255,255,255,0.1)",
+            "transition:opacity .3s",
+        ].join(";");
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = "1";
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => { toast.style.opacity = "0"; }, 2500);
+}
+
+
+
+//////////////////////////////////////////////////////
 // 🚀  INIT
 //////////////////////////////////////////////////////
 
 async function initRoom(opts = {}) {
-    const startMicOn     = opts.startMicOn     !== undefined ? opts.startMicOn     : true;
-    const startCamOn     = opts.startCamOn     !== undefined ? opts.startCamOn     : true;
-    const previewStream  = opts.previewStream  || null;
-    // Display name typed in the lobby (overrides DB name for this session)
-    const displayName    = opts.displayName    || sessionStorage.getItem("join_display_name") || "";
+    const startMicOn    = opts.startMicOn    !== undefined ? opts.startMicOn    : true;
+    const startCamOn    = opts.startCamOn    !== undefined ? opts.startCamOn    : true;
+    const previewStream = opts.previewStream || null;
+    const displayName   = opts.displayName   || sessionStorage.getItem("join_display_name") || "";
 
     audioEnabled = startMicOn;
     videoEnabled = startCamOn;
-
-    // Clear prejoin storage NOW — so if the user leaves and returns to
-    // dashboard, the preview will be shown fresh every time.
     _clearPrejoinStorage();
 
     try {
-        // Pass display_name so the server mints a token with the lobby name
         const tokenUrl = `/meeting/token/${ROOM_NAME}/` +
             (displayName ? `?display_name=${encodeURIComponent(displayName)}` : "");
         const res = await fetch(tokenUrl);
+
+        // ── Capacity check: server returns 403 when meeting is full ──────────
+        if (res.status === 403) {
+            const data = await res.json().catch(() => ({}));
+            if (data.code === "MEETING_FULL") {
+                _showMeetingFullScreen(data.limit || MAX_PARTICIPANTS);
+                return;
+            }
+            throw new Error(data.error || "Access denied");
+        }
+
         if (!res.ok) throw new Error("Failed to get token");
-        const { token, livekit_url } = await res.json();
+        const tokenData = await res.json();
+        const { token, livekit_url } = tokenData;
+
+        // Update limits from token response (server is authoritative)
+        const serverMaxP = tokenData.max_participants      || MAX_PARTICIPANTS;
+        const serverMaxD = tokenData.max_duration_minutes  || MAX_DURATION_MINUTES;
+        const serverActAt = tokenData.activated_at          || ACTIVATED_AT_ISO;
+        window._serverMaxP   = serverMaxP;
+        window._serverMaxD   = serverMaxD;
+        window._serverActAt  = serverActAt;
+
+        // Override restriction constants from server token (authoritative)
+        if (typeof tokenData.only_host_audio       !== "undefined") window.ONLY_HOST_AUDIO       = tokenData.only_host_audio;
+        if (typeof tokenData.only_host_video       !== "undefined") window.ONLY_HOST_VIDEO       = tokenData.only_host_video;
+        if (typeof tokenData.only_host_chat        !== "undefined") window.ONLY_HOST_CHAT        = tokenData.only_host_chat;
+        if (typeof tokenData.only_host_screenshare !== "undefined") window.ONLY_HOST_SCREENSHARE = tokenData.only_host_screenshare;
 
         room = new Room({
             adaptiveStream: true,
@@ -160,6 +423,12 @@ async function initRoom(opts = {}) {
         if (typeof window._onMeetingFullyStarted === 'function') {
             window._onMeetingFullyStarted();
         }
+
+        // ── Start meeting timer ───────────────────────────────────────────
+        startMeetingTimer(serverMaxD, serverActAt);
+
+        // ── Enforce host-defined meeting restrictions ─────────────────────
+        _applyMeetingRestrictions();
 
         await loadChatHistory();
 
@@ -184,9 +453,9 @@ async function initRoom(opts = {}) {
                 const publishOptions = {};
                 if (kind === "video") {
                     lkTrack = new LivekitClient.LocalVideoTrack(mediaTrack, undefined, false);
-                    publishOptions.source = LivekitClient.Track.Source.Camera;
+                    publishOptions.source    = LivekitClient.Track.Source.Camera;
                     publishOptions.videoCodec = "vp8";
-                    publishOptions.simulcast = false;
+                    publishOptions.simulcast  = false;
                 } else {
                     lkTrack = new LivekitClient.LocalAudioTrack(mediaTrack, undefined, false);
                     publishOptions.source = LivekitClient.Track.Source.Microphone;
@@ -222,27 +491,37 @@ async function initRoom(opts = {}) {
         }
 
         // Camera
-        if (startCamOn) {
+        const _effectiveCamOn = IS_HOST ? startCamOn : (startCamOn && !ONLY_HOST_VIDEO);
+        if (!_effectiveCamOn) {
+            // Stop any preview video track so the camera LED turns off
+            if (previewStream) {
+                previewStream.getVideoTracks().forEach(t => t.stop());
+            }
+            videoEnabled = false;
+        } else {
             const previewVideo = previewStream?.getVideoTracks()?.[0];
             if (previewVideo && previewVideo.readyState === "live") {
                 videoEnabled = await _publishFromMediaTrack(previewVideo, "video");
             } else {
                 videoEnabled = await _acquireAndPublish("video");
             }
-        } else {
-            videoEnabled = false;
         }
 
         // Microphone
-        if (startMicOn) {
+        const _effectiveMicOn = IS_HOST ? startMicOn : (startMicOn && !ONLY_HOST_AUDIO);
+        if (!_effectiveMicOn) {
+            // Stop any preview audio track
+            if (previewStream) {
+                previewStream.getAudioTracks().forEach(t => t.stop());
+            }
+            audioEnabled = false;
+        } else {
             const previewAudio = previewStream?.getAudioTracks()?.[0];
             if (previewAudio && previewAudio.readyState === "live") {
                 audioEnabled = await _publishFromMediaTrack(previewAudio, "audio");
             } else {
                 audioEnabled = await _acquireAndPublish("audio");
             }
-        } else {
-            audioEnabled = false;
         }
 
         // Stop leftover preview tracks
@@ -255,19 +534,18 @@ async function initRoom(opts = {}) {
             });
         }
 
-        const avOpened = videoEnabled || audioEnabled;
-        if (avOpened) {
+        if (videoEnabled || audioEnabled) {
             _syncLocalTrackStates(local);
         } else {
             _applyAvState(local.identity, false, false);
         }
 
         attachLocalTracks(local);
-
         setBtnIcon("audioBtnImg", audioEnabled);
         setBtnIcon("videoBtnImg", videoEnabled);
         setBtnIcon("screenShareBtnImg", true);
-        setBtnIcon("recordBtnImg", true);
+        if (typeof CAN_RECORD !== "undefined" && CAN_RECORD) setBtnIcon("recordBtnImg", true);
+
         const flipBtn = document.getElementById("flipBtn");
         if (flipBtn && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
             flipBtn.style.display = videoEnabled ? "flex" : "none";
@@ -296,12 +574,57 @@ async function initRoom(opts = {}) {
 
         renderPage();
         updateParticipantCount();
+        _checkCapacity();
         _broadcastLocalState();
 
     } catch (err) {
         console.error("Room init error:", err);
         showError("Could not connect: " + err.message);
     }
+}
+
+function _showMeetingFullScreen(limit) {
+    // Non-hosts get redirected to the waiting room which handles the queue.
+    // The waiting_room.html template will detect the full state via
+    // /meeting/capacity-status/<room>/ and show queue position + notify
+    // when a spot opens.
+    
+    // We pass ?queued=1 so the waiting room can skip the "not started" state
+    // and go straight to the capacity-queue UI.
+    if (!IS_HOST) {
+        window.location.href = `/room/${ROOM_NAME}/?queued=1`;
+        return;
+    }
+
+    // Host should never hit this, but just in case show a simple message.
+    document.getElementById("meetingWrapper").style.visibility = "visible";
+    document.getElementById("prejoinLobby")?.classList.add("hidden");
+    let overlay = document.getElementById("meetingFullOverlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "meetingFullOverlay";
+        overlay.style.cssText = [
+            "position:fixed;inset:0;z-index:99999",
+            "background:rgba(10,12,20,.97)",
+            "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px",
+            "font-family:'Inter',sans-serif;text-align:center;padding:32px",
+        ].join(';');
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+        <div style="font-size:52px">🚫</div>
+        <div style="font-size:22px;font-weight:700;color:#e8eaf0">Meeting is at full capacity</div>
+        <div style="font-size:14px;color:#8b90a0;max-width:340px;line-height:1.6">
+            This meeting has reached its maximum of
+            <strong style="color:#e8eaf0">${limit} participants</strong>.
+        </div>
+        <a href="/" style="margin-top:8px;padding:12px 32px;border-radius:12px;
+            background:linear-gradient(135deg,#4f8ef7,#6c63ff);
+            color:#fff;font-size:14px;font-weight:700;text-decoration:none;">
+            Return to dashboard
+        </a>
+    `;
+    overlay.style.display = "flex";
 }
 
 function _syncLocalTrackStates(participant) {
@@ -333,8 +656,19 @@ function _applyAvState(identity, camOn, audioOn) {
 function _setParticipantStatus(identity, name, videoOn, audioOn, isLocal) {
     participantStatuses[identity] = { name: name || identity, videoOn: !!videoOn, audioOn: !!audioOn, isLocal: !!isLocal };
     renderParticipantsPanel();
+    _checkCapacity();
+    // Update bar count
+    const pEl = document.getElementById("barParticipants");
+    if (pEl) pEl.textContent = String(Object.keys(participantStatuses).length);
 }
-function _removeParticipantStatus(identity) { delete participantStatuses[identity]; renderParticipantsPanel(); }
+
+function _removeParticipantStatus(identity) {
+    delete participantStatuses[identity];
+    renderParticipantsPanel();
+    _checkCapacity();
+    const pEl = document.getElementById("barParticipants");
+    if (pEl) pEl.textContent = String(Object.keys(participantStatuses).length);
+}
 
 //////////////////////////////////////////////////////
 // 🧑‍🤝‍🧑  PARTICIPANTS PANEL
@@ -354,21 +688,20 @@ function renderParticipantsPanel() {
     });
     const icons = (typeof ICONS !== "undefined") ? ICONS : {};
     entries.forEach(([identity, status]) => {
-        const row = document.createElement("div");
+        const row    = document.createElement("div");
         row.className = "p-row"; row.id = "p-row-" + identity;
         const avatar = document.createElement("div");
-        avatar.className = "p-avatar";
+        avatar.className  = "p-avatar";
         avatar.textContent = getInitials(status.name);
         const nameEl = document.createElement("div");
-        nameEl.className = "p-name";
+        nameEl.className  = "p-name";
         nameEl.textContent = status.isLocal ? `${status.name} (You)` : status.name;
-        const iconsEl = document.createElement("div");
-        iconsEl.className = "p-icons";
-        const camIcon = document.createElement("img");
+        const iconsEl  = document.createElement("div"); iconsEl.className = "p-icons";
+        const camIcon  = document.createElement("img");
         camIcon.className = "p-status-icon " + (status.videoOn ? "p-video-on" : "p-video-off");
         camIcon.src = status.videoOn ? (icons.camOn || "") : (icons.camOff || "");
         camIcon.alt = status.videoOn ? "Camera on" : "Camera off"; camIcon.title = camIcon.alt;
-        const micIcon = document.createElement("img");
+        const micIcon  = document.createElement("img");
         micIcon.className = "p-status-icon " + (status.audioOn ? "p-audio-on" : "p-audio-off");
         micIcon.src = status.audioOn ? (icons.micOn || "") : (icons.micOff || "");
         micIcon.alt = status.audioOn ? "Mic on" : "Mic off"; micIcon.title = micIcon.alt;
@@ -388,6 +721,7 @@ function attachRoomEvents() {
         addParticipant(p.identity); addParticipantTile(p, false);
         _setParticipantStatus(p.identity, p.name || p.identity, true, true, false);
         renderPage(); updateParticipantCount();
+        _checkCapacity();
         _broadcastLocalState();
     });
 
@@ -395,6 +729,7 @@ function attachRoomEvents() {
         removeParticipant(p.identity); removeTileDOM(p.identity); _removeParticipantStatus(p.identity);
         if (activeScreenShareIdentity === p.identity) _destroyScreenShare();
         renderPage(); updateParticipantCount();
+        _checkCapacity();
     });
 
     room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
@@ -421,14 +756,14 @@ function attachRoomEvents() {
     });
 
     room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
-    if (pub.source === Track.Source.ScreenShare) {
-        screenShareEnabled = false;
-        document.getElementById("screenShareBtn")?.classList.remove("active");
-        setBtnIcon("screenShareBtnImg", true);
-        hideScreenShareBanner();               // ← also hide when browser stops it
-        if (activeScreenShareIdentity) _destroyScreenShare();
-    }
-});
+        if (pub.source === Track.Source.ScreenShare) {
+            screenShareEnabled = false;
+            document.getElementById("screenShareBtn")?.classList.remove("active");
+            setBtnIcon("screenShareBtnImg", true);
+            hideScreenShareBanner();
+            if (activeScreenShareIdentity) _destroyScreenShare();
+        }
+    });
 
     room.on(RoomEvent.TrackMuted, (pub, participant) => {
         const tile    = document.getElementById("tile-" + participant.identity);
@@ -437,20 +772,17 @@ function attachRoomEvents() {
             if (!isLocal) {
                 tile?.querySelector(".video-off-overlay")?.classList.remove("hidden");
                 if (participantStatuses[participant.identity]) {
-                    participantStatuses[participant.identity].videoOn = false;
-                    renderParticipantsPanel();
+                    participantStatuses[participant.identity].videoOn = false; renderParticipantsPanel();
                 }
             }
         }
         if (pub.source === Track.Source.Microphone) {
             tile?.querySelector(".mute-icon")?.classList.remove("hidden");
             if (participantStatuses[participant.identity]) {
-                participantStatuses[participant.identity].audioOn = false;
-                renderParticipantsPanel();
+                participantStatuses[participant.identity].audioOn = false; renderParticipantsPanel();
             }
             if (isLocal) {
-                audioEnabled = false;
-                setBtnIcon("audioBtnImg", false);
+                audioEnabled = false; setBtnIcon("audioBtnImg", false);
                 document.getElementById("audioBtn")?.classList.add("active");
             }
         }
@@ -468,20 +800,17 @@ function attachRoomEvents() {
                     if (v) { p2.videoTrack.detach(v); p2.videoTrack.attach(v); applyMirror(v, false); }
                 }
                 if (participantStatuses[participant.identity]) {
-                    participantStatuses[participant.identity].videoOn = true;
-                    renderParticipantsPanel();
+                    participantStatuses[participant.identity].videoOn = true; renderParticipantsPanel();
                 }
             }
         }
         if (pub.source === Track.Source.Microphone) {
             tile?.querySelector(".mute-icon")?.classList.add("hidden");
             if (participantStatuses[participant.identity]) {
-                participantStatuses[participant.identity].audioOn = true;
-                renderParticipantsPanel();
+                participantStatuses[participant.identity].audioOn = true; renderParticipantsPanel();
             }
             if (isLocal) {
-                audioEnabled = true;
-                setBtnIcon("audioBtnImg", true);
+                audioEnabled = true; setBtnIcon("audioBtnImg", true);
                 document.getElementById("audioBtn")?.classList.remove("active");
             }
         }
@@ -498,21 +827,20 @@ function attachRoomEvents() {
         } else if (state === ConnectionState.Connected) {
             hideStatus();
         } else if (state === ConnectionState.Disconnected) {
-            if (meetingEndedByHost) {
-                setTimeout(() => { window.location.href = "/"; }, 1000);
-            }
+            if (meetingEndedByHost) setTimeout(() => { window.location.href = "/"; }, 1000);
         }
     });
 
     room.on(RoomEvent.RoomMetadataChanged, (metadata) => {
         if (metadata === "ended") {
             meetingEndedByHost = true;
+            stopMeetingTimer();
             if (!IS_HOST) {
                 room.localParticipant.trackPublications.forEach(pub => {
                     const mst = pub.track?.mediaStreamTrack;
                     if (mst) mst.stop();
                 });
-                _clearPrejoinStorage();   // ← clean up so dashboard shows preview
+                _clearPrejoinStorage();
                 _showMeetingEndedToast("Meeting ended by the host. Redirecting…");
                 setTimeout(() => { window.location.href = "/"; }, 2000);
             }
@@ -539,16 +867,14 @@ function attachRoomEvents() {
                 const tile = document.getElementById("tile-" + msg.identity);
                 if (tile) tile.querySelector(".video-off-overlay")?.classList.toggle("hidden", msg.on);
                 if (participantStatuses[msg.identity]) {
-                    participantStatuses[msg.identity].videoOn = msg.on;
-                    renderParticipantsPanel();
+                    participantStatuses[msg.identity].videoOn = msg.on; renderParticipantsPanel();
                 }
             }
             if (msg.type === "mic_state") {
                 const tile = document.getElementById("tile-" + msg.identity);
                 if (tile) tile.querySelector(".mute-icon")?.classList.toggle("hidden", msg.on);
                 if (participantStatuses[msg.identity]) {
-                    participantStatuses[msg.identity].audioOn = msg.on;
-                    renderParticipantsPanel();
+                    participantStatuses[msg.identity].audioOn = msg.on; renderParticipantsPanel();
                 }
             }
         } catch(e) {}
@@ -692,12 +1018,9 @@ function addParticipantTile(participant, isLocal) {
 function attachLocalTracks(participant) {
     const video = document.getElementById("video-" + participant.identity);
     if (!video) return;
-    const camPub = participant.getTrackPublication(Track.Source.Camera);
+    const camPub  = participant.getTrackPublication(Track.Source.Camera);
     const lkTrack = camPub?.videoTrack ?? camPub?.track;
-    if (lkTrack) {
-        try { lkTrack.detach(video); } catch(e) {}
-        lkTrack.attach(video);
-    }
+    if (lkTrack) { try { lkTrack.detach(video); } catch(e) {} lkTrack.attach(video); }
     applyMirror(video, facingMode === "user");
 }
 
@@ -720,7 +1043,7 @@ function removeTileDOM(identity) {
 //////////////////////////////////////////////////////
 
 function updateLayout(visibleCount) {
-    const container = document.getElementById("videoContainer");
+    const container      = document.getElementById("videoContainer");
     const hasScreenShare = !!document.getElementById("screenshare-tile");
     if (visibleCount === undefined) {
         visibleCount = [...container.querySelectorAll(".video-tile:not(#screenshare-tile)")]
@@ -767,8 +1090,7 @@ async function toggleVideo() {
         overlay?.classList.add("hidden");
         try {
             const track = await LivekitClient.createLocalVideoTrack({
-                facingMode: facingMode,
-                resolution: { width: 1280, height: 720, frameRate: 30 },
+                facingMode, resolution: { width: 1280, height: 720, frameRate: 30 },
             });
             const videoEl = document.getElementById("video-" + identity);
             if (videoEl) { try { track.detach(videoEl); } catch(_) {} track.attach(videoEl); applyMirror(videoEl, true); }
@@ -777,16 +1099,14 @@ async function toggleVideo() {
             _broadcastVideoMuteState(true);
         } catch(e) {
             console.error("toggleVideo re-acquire failed:", e.name, e.message);
-            videoEnabled = false;
-            overlay?.classList.remove("hidden");
+            videoEnabled = false; overlay?.classList.remove("hidden");
             if (flipBtn && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) flipBtn.style.display = "none";
         }
     }
     setBtnIcon("videoBtnImg", videoEnabled);
     document.getElementById("videoBtn")?.classList.toggle("active", !videoEnabled);
     if (participantStatuses[identity]) {
-        participantStatuses[identity].videoOn = videoEnabled;
-        renderParticipantsPanel();
+        participantStatuses[identity].videoOn = videoEnabled; renderParticipantsPanel();
     }
 }
 
@@ -811,8 +1131,7 @@ async function flipCamera() {
     if (!room || flipInProgress) return;
     flipInProgress = true;
     const newFacing = (facingMode === "user") ? "environment" : "user";
-    const btn = document.getElementById("flipBtn");
-    btn?.classList.add("active");
+    const btn = document.getElementById("flipBtn"); btn?.classList.add("active");
     const attempt = async () => {
         const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
         if (camPub?.track) await room.localParticipant.unpublishTrack(camPub.track, true);
@@ -858,17 +1177,13 @@ async function toggleAudio() {
             room.localParticipant.publishTrack(track, { source: Track.Source.Microphone })
                 .catch(e => console.error("publishTrack mic-on:", e.name, e.message));
             _broadcastAudioMuteState(true);
-        } catch(e) {
-            console.error("toggleAudio re-acquire failed:", e.name, e.message);
-            audioEnabled = false;
-        }
+        } catch(e) { console.error("toggleAudio re-acquire failed:", e.name, e.message); audioEnabled = false; }
     }
     document.querySelector(`#tile-${identity} .mute-icon`)?.classList.toggle("hidden", audioEnabled);
     setBtnIcon("audioBtnImg", audioEnabled);
     document.getElementById("audioBtn")?.classList.toggle("active", !audioEnabled);
     if (participantStatuses[identity]) {
-        participantStatuses[identity].audioOn = audioEnabled;
-        renderParticipantsPanel();
+        participantStatuses[identity].audioOn = audioEnabled; renderParticipantsPanel();
     }
 }
 
@@ -889,7 +1204,7 @@ function showScreenShareBanner() {
     if (!b) {
         b = document.createElement("div");
         b.id = "screenShareBanner";
-        b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(30,80,200,0.92);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;display:flex;align-items:center;gap:12px;backdrop-filter:blur(4px);cursor:default;box-shadow:0 4px 20px rgba(0,0,80,0.3)";
+        b.style.cssText = "position:fixed;top:52px;left:50%;transform:translateX(-50%);background:rgba(30,80,200,0.92);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:8000;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);cursor:default;box-shadow:0 4px 20px rgba(0,0,80,0.3)";
         document.body.appendChild(b);
     }
     b.innerHTML = `
@@ -898,11 +1213,19 @@ function showScreenShareBanner() {
         <button onclick="toggleScreenShare()" style="background:rgba(255,255,255,0.22);border:none;color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;">Stop sharing</button>
     `;
     b.style.display = "flex";
+    // Push recording banner down if also visible
+    const rb = document.getElementById("recordingBanner");
+    if (rb && rb.style.display === "flex") {
+        rb.style.top = "96px";
+    }
 }
 
 function hideScreenShareBanner() {
     const b = document.getElementById("screenShareBanner");
     if (b) b.style.display = "none";
+    // Reset recording banner position
+    const rb = document.getElementById("recordingBanner");
+    if (rb) rb.style.top = "52px";
 }
 
 async function toggleScreenShare() {
@@ -914,16 +1237,12 @@ async function toggleScreenShare() {
     try {
         if (!screenShareEnabled) {
             await room.localParticipant.setScreenShareEnabled(true);
-            screenShareEnabled = true;
-            btn?.classList.add("active");
-            setBtnIcon("screenShareBtnImg", false);
-            showScreenShareBanner();           // ← show in-app stop banner
+            screenShareEnabled = true; btn?.classList.add("active"); setBtnIcon("screenShareBtnImg", false);
+            showScreenShareBanner();
         } else {
             await room.localParticipant.setScreenShareEnabled(false);
-            screenShareEnabled = false;
-            btn?.classList.remove("active");
-            setBtnIcon("screenShareBtnImg", true);
-            hideScreenShareBanner();           // ← hide banner
+            screenShareEnabled = false; btn?.classList.remove("active"); setBtnIcon("screenShareBtnImg", true);
+            hideScreenShareBanner();
         }
     } catch(e) {
         screenShareEnabled = false; btn?.classList.remove("active"); setBtnIcon("screenShareBtnImg", true);
@@ -935,12 +1254,16 @@ async function toggleScreenShare() {
 }
 
 //////////////////////////////////////////////////////
-// ⏺️  RECORDING
+// ⏺️  RECORDING  (guarded by CAN_RECORD flag)
 //////////////////////////////////////////////////////
 
-
-
 async function toggleRecording() {
+    // Feature-flag guard
+    if (typeof CAN_RECORD !== "undefined" && !CAN_RECORD) {
+        if (typeof showUpgradeToast === "function") showUpgradeToast('record');
+        return;
+    }
+
     const btn      = document.getElementById("recordBtn");
     const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
     if (!isRecording) {
@@ -969,11 +1292,8 @@ async function toggleRecording() {
             mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
             mediaRecorder.onstop = async () => {
-                const durationSeconds = _recordingStartTime
-                    ? Math.round((Date.now() - _recordingStartTime) / 1000)
-                    : 0;
+                const durationSeconds = _recordingStartTime ? Math.round((Date.now() - _recordingStartTime) / 1000) : 0;
                 _recordingStartTime = null;
-
                 const blob = new Blob(recordedChunks, { type: "video/webm" });
                 const fd   = new FormData();
                 fd.append("recording", blob, `meeting-${ROOM_NAME}-${Date.now()}.webm`);
@@ -1002,7 +1322,6 @@ async function toggleRecording() {
         mediaRecorder?.stop(); mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
         isRecording = false; btn?.classList.remove("active"); setBtnIcon("recordBtnImg", true);
         hideRecordingBanner(); _broadcastRecordingState(false);
-        // _recordingStartTime is cleared inside onstop
     }
 }
 
@@ -1014,10 +1333,21 @@ async function _broadcastRecordingState(started) {
 
 function showRecordingBanner(r) {
     let b = document.getElementById("recordingBanner");
-    if (!b) { b = document.createElement("div"); b.id = "recordingBanner"; b.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(180,0,0,0.88);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);pointer-events:none"; document.body.appendChild(b); }
-    b.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3333;animation:recPulse 1s infinite"></span>${escapeHtml(r)} is recording this meeting`;
+    if (!b) {
+        b = document.createElement("div");
+        b.id = "recordingBanner";
+        b.style.cssText = "position:fixed;top:52px;left:50%;transform:translateX(-50%);background:rgba(180,0,0,0.88);color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:8000;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);pointer-events:none";
+        document.body.appendChild(b);
+    }
+    b.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3333;animation:recPulse 1s infinite"></span>Meeting is being recorded.`;
     b.style.display = "flex";
+    // If screen share banner is also visible, push recording banner below it
+    const ssb = document.getElementById("screenShareBanner");
+    if (ssb && ssb.style.display === "flex") {
+        b.style.top = "96px";
+    }
 }
+
 function hideRecordingBanner() { const b = document.getElementById("recordingBanner"); if (b) b.style.display = "none"; }
 
 //////////////////////////////////////////////////////
@@ -1026,6 +1356,11 @@ function hideRecordingBanner() { const b = document.getElementById("recordingBan
 
 async function sendChatMessage(text) {
     if (!room || !text.trim()) return;
+    // Restriction guard for non-host
+    if (!IS_HOST && window._participantChatBlocked) {
+        _showRestrictionToast("The host has disabled participant chat.");
+        return;
+    }
     await room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "chat", text })), { reliable: true });
     appendChatMessage("You", text, true);
     if (window.MEETING_CHAT_ID) {
@@ -1049,7 +1384,7 @@ async function loadChatHistory() {
         const frag = document.createDocumentFragment();
         data.messages.forEach(m => {
             if (existingTexts.has(m.sender + ":" + m.text)) return;
-            const div = document.createElement("div");
+            const div  = document.createElement("div");
             const time = new Date(m.sent_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
             div.className = "chat-message " + (m.is_me ? "chat-own" : "chat-other");
             div.innerHTML = `<span class="chat-sender">${escapeHtml(m.is_me ? "" : m.sender)}</span><span class="chat-text">${escapeHtml(m.text)}</span><span class="chat-time">${time}</span>`;
@@ -1087,6 +1422,7 @@ function _onChatClosed() { chatOpen = false; }
 //////////////////////////////////////////////////////
 
 async function leaveMeeting() {
+    stopMeetingTimer();
     stopTranscript();
 
     if (isRecording) {
@@ -1104,27 +1440,25 @@ async function leaveMeeting() {
         });
     }
 
-    await saveTranscript();   // ← save transcript before leaving
+    await saveTranscript();
     _clearPrejoinStorage();
 
-    // Reset admission so the user must ask permission again on next join
     if (!IS_HOST) {
         try {
             await fetch(`/meeting/knock-cancel/${ROOM_NAME}/`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') },
             });
         } catch(e) {}
     }
-    
+
     if (room) await room.disconnect();
     window.location.href = "/";
 }
 
 async function endMeeting() {
     if (!IS_HOST || !room) return;
-
-    stopTranscript();   // ← stop recognition immediately
+    stopMeetingTimer();
+    stopTranscript();
 
     if (isRecording) {
         _showMeetingEndedToast("Saving recording… please wait.");
@@ -1142,8 +1476,7 @@ async function endMeeting() {
     }
 
     _showMeetingEndedToast("Saving transcript…");
-    await saveTranscript();   // ← save transcript before ending
-
+    await saveTranscript();
     _showMeetingEndedToast("Ending meeting…");
 
     room.localParticipant.trackPublications.forEach(pub => {
@@ -1154,9 +1487,10 @@ async function endMeeting() {
     meetingEndedByHost = true;
     _clearPrejoinStorage();
 
+    
+
     fetch(`/meeting/end/${ROOM_NAME}/`, {
-        method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") }
+        method: "POST", headers: { "X-CSRFToken": getCookie("csrftoken") }
     }).catch(e => console.warn("end_meeting fetch failed:", e));
 
     try { await room.disconnect(); } catch(e) {}
@@ -1168,142 +1502,84 @@ async function muteAll() {
     await room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "mute_all" })), { reliable: true });
 }
 
-
 //////////////////////////////////////////////////////
 // 📝  TRANSCRIPT (Web Speech API)
 //////////////////////////////////////////////////////
 
-function _getDisplayName() {
-    return room?.localParticipant?.name || "Me";
-}
+function _getDisplayName() { return room?.localParticipant?.name || "Me"; }
 
 function startTranscript() {
-    // Skip on mobile — triggers repeated browser mic permission popups
-    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-        return false;
-    }
+    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) return false;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-        console.warn("SpeechRecognition not supported in this browser.");
-        return false;
-    }
+    if (!SR) { console.warn("SpeechRecognition not supported."); return false; }
     if (transcriptActive) return true;
-
-    transcriptLines     = [];
-    transcriptActive    = true;
-    transcriptStartTime = Date.now();
-
+    transcriptLines = []; transcriptActive = true; transcriptStartTime = Date.now();
     _recognition = new SR();
-    _recognition.continuous   = true;
-    _recognition.interimResults = false;
-    _recognition.lang         = 'en-US';
-    _recognitionRunning        = true;
-
+    _recognition.continuous = true; _recognition.interimResults = false; _recognition.lang = 'en-US';
+    _recognitionRunning = true;
     _recognition.onresult = (event) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
-                const text      = event.results[i][0].transcript.trim();
-                const elapsed   = Math.floor((Date.now() - transcriptStartTime) / 1000);
-                const h         = Math.floor(elapsed / 3600);
-                const m         = Math.floor((elapsed % 3600) / 60);
-                const s         = elapsed % 60;
-                const timestamp = h
-                    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-                    : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                const name = _getDisplayName();
-                transcriptLines.push(`[${timestamp}] ${name}: ${text}`);
+                const text    = event.results[i][0].transcript.trim();
+                const elapsed = Math.floor((Date.now() - transcriptStartTime) / 1000);
+                const h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
+                const ts = h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                transcriptLines.push(`[${ts}] ${_getDisplayName()}: ${text}`);
             }
         }
     };
-
-    _recognition.onerror = (e) => {
-        if (e.error === 'no-speech' || e.error === 'aborted') return;
-        console.warn("SpeechRecognition error:", e.error);
-    };
-
-    // Auto-restart if it stops unexpectedly (browser stops after ~60s silence)
+    _recognition.onerror = (e) => { if (e.error === 'no-speech' || e.error === 'aborted') return; console.warn("SpeechRecognition error:", e.error); };
     _recognition.onend = () => {
         if (transcriptActive && _recognitionRunning && !(/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))) {
             try { _recognition.start(); } catch(e) {}
         }
     };
-
-    try {
-        _recognition.start();
-        console.log("Transcript started.");
-        return true;
-    } catch(e) {
-        console.warn("Could not start SpeechRecognition:", e);
-        transcriptActive = false;
-        return false;
-    }
+    try { _recognition.start(); console.log("Transcript started."); return true; }
+    catch(e) { console.warn("Could not start SpeechRecognition:", e); transcriptActive = false; return false; }
 }
 
 function stopTranscript() {
-    transcriptActive    = false;
-    _recognitionRunning = false;
-    if (_recognition) {
-        try { _recognition.stop(); } catch(e) {}
-        _recognition = null;
-    }
+    transcriptActive = false; _recognitionRunning = false;
+    if (_recognition) { try { _recognition.stop(); } catch(e) {} _recognition = null; }
 }
 
 async function saveTranscript() {
     if (!transcriptLines.length) return;
-
-    const durationSeconds = transcriptStartTime
-        ? Math.round((Date.now() - transcriptStartTime) / 1000)
-        : 0;
-
-    // Build transcript text file
+    const durationSeconds = transcriptStartTime ? Math.round((Date.now() - transcriptStartTime) / 1000) : 0;
     const header  = `Meeting: ${ROOM_NAME}\nDate: ${new Date().toLocaleString()}\nDuration: ${_formatDuration(durationSeconds)}\n${'─'.repeat(60)}\n\n`;
-    const body    = transcriptLines.join('\n');
-    const content = header + body;
-
+    const content = header + transcriptLines.join('\n');
     const blob = new Blob([content], { type: 'text/plain' });
     const fd   = new FormData();
     fd.append('transcript', blob, `transcript-${ROOM_NAME}-${Date.now()}.txt`);
-    fd.append('room_name',  ROOM_NAME);
+    fd.append('room_name', ROOM_NAME);
     fd.append('duration_seconds', durationSeconds);
-
     try {
         showStatus("📝 Saving transcript…");
-        const res  = await fetch('/meeting/save-transcript/', {
-            method:  'POST',
-            headers: { 'X-CSRFToken': getCookie('csrftoken') },
-            body:    fd,
-        });
+        const res  = await fetch('/meeting/save-transcript/', { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') }, body: fd });
         const data = await res.json();
-        if (data.url) {
-            showStatusHTML(`✅ Transcript saved! <a href="${data.url}" target="_blank" rel="noopener" style="color:#7df;text-decoration:underline;">▶ View</a>`);
-        } else {
-            showStatus("❌ Transcript save failed: " + (data.error || "Unknown"));
-        }
-    } catch(e) {
-        showStatus("❌ Transcript upload error: " + e.message);
-    }
-
-    transcriptLines     = [];
-    transcriptStartTime = null;
-}
-
-function _formatDuration(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return h
-        ? `${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`
-        : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        if (data.url) showStatusHTML(`✅ Transcript saved! <a href="${data.url}" target="_blank" rel="noopener" style="color:#7df;text-decoration:underline;">▶ View</a>`);
+        else showStatus("❌ Transcript save failed: " + (data.error || "Unknown"));
+    } catch(e) { showStatus("❌ Transcript upload error: " + e.message); }
+    transcriptLines = []; transcriptStartTime = null;
 }
 
 //////////////////////////////////////////////////////
 // 🔧  HELPERS
 //////////////////////////////////////////////////////
 
+function _formatDuration(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return h
+        ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+        : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
 function getInitials(name) { if (!name) return "?"; return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2); }
-function escapeHtml(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function escapeHtml(t) { return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function getCookie(name) { const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)"); return v ? v.pop() : ""; }
-function showError(msg)       { const el = document.getElementById("statusBar"); if (el) { el.textContent = msg; el.className = "status-bar error"; el.classList.remove("hidden"); } }
-function showStatus(msg)      { const el = document.getElementById("statusBar"); if (el) { el.textContent = msg; el.className = "status-bar info"; el.classList.remove("hidden"); } }
-function showStatusHTML(html) { const el = document.getElementById("statusBar"); if (el) { el.innerHTML = html; el.className = "status-bar info"; el.classList.remove("hidden"); } }
+function showError(msg)       { const el = document.getElementById("statusBar"); if (el) { el.textContent = msg; el.className = "status-bar error";  el.classList.remove("hidden"); } }
+function showStatus(msg)      { const el = document.getElementById("statusBar"); if (el) { el.textContent = msg; el.className = "status-bar info";   el.classList.remove("hidden"); } }
+function showStatusHTML(html) { const el = document.getElementById("statusBar"); if (el) { el.innerHTML  = html; el.className = "status-bar info";   el.classList.remove("hidden"); } }
 function hideStatus()         { const el = document.getElementById("statusBar"); if (el) el.className = "status-bar hidden"; }

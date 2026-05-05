@@ -6,8 +6,8 @@
   body { font-family: Inter, Arial, sans-serif; background: #f4f6fb; margin: 0; padding: 0; }
   .card { max-width: 520px; margin: 32px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
   .header { background: #1a1f2e; padding: 28px 32px; }
-  .header h1 { color: #fff; margin: 0; font-size: 20px; }
-  .header p  { color: #9aa0b4; margin: 6px 0 0; font-size: 13px; }
+  .header h1 { color: #fff; margin: 0; font-size: 20px; text-align: center; }
+  .header p  { color: #9aa0b4; margin: 6px 0 0; font-size: 13px; text-align: center; margin-top: 15px; }
   .body { padding: 28px 32px; }
   .row { display: flex; gap: 12px; margin-bottom: 14px; align-items: flex-start; }
   .label { font-size: 11px; color: #9aa0b4; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; min-width: 80px; padding-top: 2px; }
@@ -20,7 +20,7 @@
 <body>
 <div class="card">
   <div class="header">
-    <h1>📹 {{ meeting.title }}</h1>
+    <h1>{{ meeting.title }}</h1>
     <p>You have been invited to a Vetri Meeting</p>
   </div>
   <div class="body">
@@ -40,7 +40,7 @@
     </div>
     <div class="row">
       <span class="label">Time</span>
-      <span class="value">{{ meeting.scheduled_start|date:"h:i A" }} – {{ meeting.scheduled_end|date:"h:i A" }}</span>
+      <span class="value">{{ meeting.scheduled_start|date:"h:i A" }} - {{ meeting.scheduled_end|date:"h:i A" }}</span>
     </div>
     {% endif %}
     {% if meeting.repeat != 'none' %}
@@ -62,7 +62,7 @@
       <span class="label">Link</span>
       <span class="value" style="word-break:break-all;font-size:12px;">{{ meeting.meeting_url }}</span>
     </div>
-    <a href="{{ meeting.meeting_url }}" class="join-btn">Join Meeting →</a>
+    <a href="{{ meeting.meeting_url }}" class="join-btn">Join Meeting</a>
   </div>
   <div class="footer">Vetri Meetings · If you weren't expecting this invite, you can ignore this email.</div>
 </div>

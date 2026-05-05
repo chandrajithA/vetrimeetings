@@ -52,7 +52,7 @@
 
             <div class="menu-item {% if request.resolver_match.url_name == 'chat_page' %}active{% endif %}" onclick="window.location.href='{% url 'meetings:chat_page' %}'">
                 <img src="{% static 'meetings/images/chat.png' %}">
-                <span>Team Chat</span>
+                <span>Chat</span>
             </div>
 
             {% comment %} <div class="menu-item">
